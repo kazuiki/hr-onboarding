@@ -1,26 +1,82 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
+
+  /* Official Brand Palette */
+  --brand-deep: #011f4b;
+  --brand-navy: #03396c;
+  --brand-primary: #005b96;
+  --brand-muted: #6497b1;
+  --brand-ice: #b3cde0;
+  --brand-ice-light: #eaf2f8;
+
+  /* Semantic Tokens */
+  --status-success: #10b981;
+  --status-success-bg: #ecfdf5;
+  --status-warning: #f59e0b;
+  --status-warning-bg: #fffbeb;
+  --status-danger: #ef4444;
+  --status-danger-bg: #fef2f2;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@theme {
+  --color-brand-deep: #011f4b;
+  --color-brand-navy: #03396c;
+  --color-brand-primary: #005b96;
+  --color-brand-muted: #6497b1;
+  --color-brand-ice: #b3cde0;
+  --color-brand-ice-light: #eaf2f8;
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --color-primary: #005b96;
+  --color-primary-dark: #03396c;
+  --color-primary-deep: #011f4b;
+  --color-secondary: #6497b1;
+  --color-pale: #b3cde0;
+
+  --font-sans: var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
 }
 
 body {
-  background: var(--background);
+  background-color: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Modern Card & Glass Effects */
+.card-modern {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 1rem;
+  box-shadow: 0 1px 3px 0 rgba(1, 31, 75, 0.05), 0 1px 2px -1px rgba(1, 31, 75, 0.05);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-modern:hover {
+  border-color: #b3cde0;
+  box-shadow: 0 4px 12px -2px rgba(1, 31, 75, 0.08), 0 2px 6px -2px rgba(1, 31, 75, 0.05);
+}
+
+/* Badge styling */
+.badge-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.25rem 0.625rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  line-height: 1;
+}
+
+/* Focus styles */
+*:focus-visible {
+  outline: 2px solid #005b96;
+  outline-offset: 2px;
 }
