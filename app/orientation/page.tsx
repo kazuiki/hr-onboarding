@@ -1,26 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import {
-  Building2,
-  Lock,
-  Unlock,
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
   ArrowRight,
+  CheckCircle2,
+  Lock,
+  Pause,
+  Play,
   Shield,
-  AlertCircle,
+  Unlock,
 } from 'lucide-react';
 import { INITIAL_EMPLOYEE } from '@/lib/mock-data';
 
 const ORIENTATION_WATCHED_KEY = 'pki_orientation_watched';
 
-// NOTE: Replace with your real company introduction video (MP4) before production.
-const VIDEO_SRC =
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+// Quick test mode so you can validate the onboarding flow without a real video.
+// Set this to false and wire up a real MP4 when you have one.
+const TEST_MODE = true;
+const TEST_DURATION_SECONDS = 10;
 
 function formatTime(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return '0:00';
@@ -31,130 +30,43 @@ function formatTime(seconds: number): string {
 
 export default function OrientationPage() {
   const router = useRouter();
-  const videoRef = useRef<HTMLVideoElement | null>(null);
 
+  const [simTime, setSimTime] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-
-  // Anti-skip: furthest verified playback position.
-  const maxWatchedRef = useRef(0);
-
   const [videoFinished, setVideoFinished] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
-  const [showSeekWarning, setShowSeekWarning] = useState(false);
-  const seekWarningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
   useEffect(() => {
     if (typeof window === 'undefined') return;
-    const alreadyWatched = localStorage.getItem(ORIENTATION_WATCHED_KEY);
-    if (alreadyWatched === 'true') {
-      router.replace('/dashboard');
-    }
-  }, [router]);
-
-  const flashSeekWarning = useCallback(() => {
-    setShowSeekWarning(true);
-    if (seekWarningTimerRef.current) clearTimeout(seekWarningTimerRef.current);
-    seekWarningTimerRef.current = setTimeout(() => setShowSeekWarning(false), 2500);
-  }, []);
-
-  const handleTimeUpdate = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    const ct = video.currentTime;
-    setCurrentTime(ct);
-
-    if (ct > maxWatchedRef.current) {
-      maxWatchedRef.current = ct;
-    }
-  }, []);
-
-  // Forward seeking guard.
-  const handleSeeking = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (video.currentTime > maxWatchedRef.current + 1) {
-      video.currentTime = maxWatchedRef.current;
-      flashSeekWarning();
-    }
-  }, [flashSeekWarning]);
-
-  // Keyboard guard: Right Arrow + l/L.
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const blocked = ['ArrowRight', 'l', 'L'];
-      if (blocked.includes(e.key)) {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        flashSeekWarning();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown, true);
-    return () => window.removeEventListener('keydown', handleKeyDown, true);
-  }, [flashSeekWarning]);
-
-  const handleEnded = useCallback(() => {
-    setIsPlaying(false);
-    setVideoFinished(true);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(ORIENTATION_WATCHED_KEY, 'true');
-    }
-  }, []);
-
-  const togglePlayPause = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (video.paused) {
-      video.play();
-      setIsPlaying(true);
-    } else {
-      video.pause();
+    const alreadyWatched = localStorage.getItem(ORIENTATION_WATCHED_KEY) === 'true';
+    if (alreadyWatched) {
+      setVideoFinished(true);
       setIsPlaying(false);
+      setSimTime(TEST_DURATION_SECONDS);
     }
   }, []);
 
-  const toggleMute = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
+  useEffect(() => {
+    if (!TEST_MODE) return;
+    if (!isPlaying) return;
+    if (videoFinished) return;
 
-    video.muted = !video.muted;
-    setIsMuted(video.muted);
-  }, []);
+    const intervalId = window.setInterval(() => {
+      setSimTime((prev) => {
+        const next = Math.min(TEST_DURATION_SECONDS, prev + 0.1);
+        if (next >= TEST_DURATION_SECONDS) {
+          window.clearInterval(intervalId);
 
-  const handleVolumeChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const video = videoRef.current;
-    if (!video) return;
+          localStorage.setItem(ORIENTATION_WATCHED_KEY, 'true');
+          setVideoFinished(true);
+          setIsPlaying(false);
+        }
+        return next;
+      });
+    }, 100);
 
-    const v = Number(e.target.value);
-    video.volume = v;
-    setVolume(v);
-    setIsMuted(v === 0);
-  }, []);
-
-  const handleProgressScrub = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const video = videoRef.current;
-      if (!video) return;
-
-      const requested = Number(e.target.value);
-      if (requested > maxWatchedRef.current + 1) {
-        flashSeekWarning();
-        return;
-      }
-
-      video.currentTime = requested;
-      setCurrentTime(requested);
-    },
-    [flashSeekWarning]
-  );
+    return () => window.clearInterval(intervalId);
+  }, [isPlaying, videoFinished]);
 
   const handleProceed = useCallback(() => {
     if (!videoFinished) return;
@@ -162,20 +74,21 @@ export default function OrientationPage() {
     setTimeout(() => router.push('/dashboard'), 800);
   }, [router, videoFinished]);
 
-  const watchedPct = duration > 0 ? (currentTime / duration) * 100 : 0;
-  const maxWatchedPct =
-    duration > 0 ? (maxWatchedRef.current / duration) * 100 : 0;
+  const watchedPct =
+    TEST_DURATION_SECONDS > 0 ? (simTime / TEST_DURATION_SECONDS) * 100 : 0;
 
   return (
     <div className="min-h-screen bg-[#011f4b] text-white flex flex-col">
       <header className="h-14 flex items-center justify-between px-5 sm:px-8 border-b border-[#03396c]/60">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-[#005b96] flex items-center justify-center">
-            <Building2 className="w-4 h-4 text-white" />
-          </div>
-          <span className="font-bold text-sm tracking-tight text-white">
-            Philkoei International, Inc.
-          </span>
+          <Image
+            src="/pkii_logo.png"
+            alt="Philkoei International, Inc."
+            width={180}
+            height={44}
+            className="h-11 w-auto object-contain"
+            priority
+          />
         </div>
         <div className="flex items-center gap-2 text-[11px] text-[#b3cde0] font-medium border border-[#03396c] rounded-full px-3 py-1">
           <Shield className="w-3.5 h-3.5 text-[#6497b1]" />
@@ -190,55 +103,36 @@ export default function OrientationPage() {
             <span className="text-[#b3cde0]">{INITIAL_EMPLOYEE.full_name}!</span>
           </h1>
           <p className="text-sm text-[#6497b1] max-w-xl mx-auto leading-relaxed">
-            Before you begin your onboarding checklist, please watch the Company Introduction &amp;
-            Orientation video in full. The portal will unlock automatically once the video is
-            complete.
+            {TEST_MODE
+              ? `For now, this is a ${TEST_DURATION_SECONDS}-second test playback so you can verify the onboarding flow.`
+              : 'Please watch the company orientation video in full. The portal will unlock automatically once complete.'}
           </p>
         </div>
 
         <div className="w-full bg-[#03396c]/30 border border-[#03396c] rounded-2xl overflow-hidden shadow-2xl">
-          <div
-            className={`flex items-center gap-2.5 px-5 py-3 bg-amber-500/15 border-b border-amber-500/30 text-amber-300 text-xs font-medium transition-all duration-300 ${
-              showSeekWarning
-                ? 'opacity-100 max-h-12'
-                : 'opacity-0 max-h-0 overflow-hidden py-0 border-none'
-            }`}
-          >
-            <AlertCircle className="w-4 h-4 shrink-0 text-amber-400" />
-            Fast-forwarding is disabled — please watch the entire orientation video.
-          </div>
+          <div className="relative bg-black aspect-video w-full">
+            <div className="absolute inset-0 bg-gradient-to-br from-[#011f4b] via-[#03396c] to-[#005b96] opacity-70" />
 
-          <div className="relative bg-black aspect-video w-full group">
-            <video
-              ref={videoRef}
-              src={VIDEO_SRC}
-              className="w-full h-full object-contain"
-              onTimeUpdate={handleTimeUpdate}
-              onSeeking={handleSeeking}
-              onEnded={handleEnded}
-              onLoadedMetadata={() => {
-                const v = videoRef.current;
-                setDuration(v?.duration ?? 0);
-              }}
-              onContextMenu={(e) => e.preventDefault()}
-              disablePictureInPicture
-              controls={false}
-            />
-
-            {!isPlaying && !videoFinished && (
+            {!videoFinished ? (
               <button
-                onClick={togglePlayPause}
+                type="button"
+                onClick={() => {
+                  if (!TEST_MODE) return;
+                  setIsPlaying((p) => !p);
+                }}
                 className="absolute inset-0 flex items-center justify-center"
-                aria-label="Play orientation video"
+                aria-label={isPlaying ? 'Pause orientation test' : 'Play orientation test'}
               >
                 <div className="w-20 h-20 rounded-full bg-[#005b96]/80 backdrop-blur-sm flex items-center justify-center hover:bg-[#005b96] transition-all shadow-xl">
-                  <Play className="w-8 h-8 text-white ml-1" />
+                  {isPlaying ? (
+                    <Pause className="w-8 h-8 text-white" />
+                  ) : (
+                    <Play className="w-8 h-8 text-white ml-0.5" />
+                  )}
                 </div>
               </button>
-            )}
-
-            {videoFinished && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#011f4b]/80 backdrop-blur-sm gap-4">
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4">
                 <div className="w-20 h-20 rounded-full bg-emerald-500/20 border-2 border-emerald-400 flex items-center justify-center">
                   <CheckCircle2 className="w-10 h-10 text-emerald-400" />
                 </div>
@@ -248,77 +142,17 @@ export default function OrientationPage() {
                 </div>
               </div>
             )}
-          </div>
 
-          <div className="px-5 py-4 bg-[#011f4b]/80 space-y-3 border-t border-[#03396c]/60">
-            <div className="relative h-2 rounded-full bg-[#03396c] overflow-hidden cursor-pointer">
-              <div
-                className="absolute inset-y-0 left-0 bg-[#6497b1]/60 pointer-events-none"
-                style={{ width: `${maxWatchedPct}%` }}
-              />
-              <div
-                className="absolute inset-y-0 left-0 bg-[#005b96] pointer-events-none"
-                style={{ width: `${watchedPct}%` }}
-              />
-              <input
-                type="range"
-                min={0}
-                max={duration || 100}
-                step={0.1}
-                value={currentTime}
-                onChange={handleProgressScrub}
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                aria-label="Video progress"
-              />
-            </div>
-
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={togglePlayPause}
-                  disabled={videoFinished}
-                  className="w-9 h-9 rounded-full bg-[#005b96] hover:bg-[#03396c] disabled:opacity-40 flex items-center justify-center transition-colors"
-                  aria-label={isPlaying ? 'Pause' : 'Play'}
-                >
-                  {isPlaying ? (
-                    <Pause className="w-4 h-4 text-white" />
-                  ) : (
-                    <Play className="w-4 h-4 text-white ml-0.5" />
-                  )}
-                </button>
-
-                <span className="text-xs font-mono text-[#b3cde0] tabular-nums">
-                  {formatTime(currentTime)} <span className="text-[#6497b1]">/ {formatTime(duration)}</span>
-                </span>
-              </div>
-
-              <div className="hidden sm:flex items-center gap-1 text-[11px] font-semibold text-[#6497b1]">
-                <Lock className="w-3 h-3" />
-                No skipping — watch fully to unlock
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={toggleMute}
-                  className="text-[#6497b1] hover:text-white transition-colors"
-                  aria-label={isMuted ? 'Unmute' : 'Mute'}
-                >
-                  {isMuted || volume === 0 ? (
-                    <VolumeX className="w-4 h-4" />
-                  ) : (
-                    <Volume2 className="w-4 h-4" />
-                  )}
-                </button>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={isMuted ? 0 : volume}
-                  onChange={handleVolumeChange}
-                  className="w-20 accent-[#005b96]"
-                  aria-label="Volume"
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
+              <div className="relative h-2 rounded-full bg-[#03396c] overflow-hidden">
+                <div
+                  className="absolute inset-y-0 left-0 bg-[#005b96] transition-all duration-300"
+                  style={{ width: `${watchedPct}%` }}
                 />
+              </div>
+              <div className="flex items-center justify-between mt-2 text-xs text-[#b3cde0]">
+                <span className="font-mono tabular-nums">{formatTime(simTime)}</span>
+                <span className="font-mono tabular-nums">{formatTime(TEST_DURATION_SECONDS)}</span>
               </div>
             </div>
           </div>
@@ -330,10 +164,10 @@ export default function OrientationPage() {
               <div className="w-44 h-1.5 bg-[#03396c] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-[#6497b1] rounded-full transition-all duration-300"
-                  style={{ width: `${maxWatchedPct}%` }}
+                  style={{ width: `${watchedPct}%` }}
                 />
               </div>
-              <span className="font-mono text-xs">{Math.floor(maxWatchedPct)}% watched</span>
+              <span className="font-mono text-xs">{Math.floor(watchedPct)}% watched</span>
             </div>
           )}
 
@@ -362,15 +196,14 @@ export default function OrientationPage() {
               <>
                 <Lock className="w-5 h-5" />
                 <span>Proceed to Onboarding Portal</span>
-                <span className="ml-1 text-xs opacity-70">(watch video to unlock)</span>
+                <span className="ml-1 text-xs opacity-70">(play test to unlock)</span>
               </>
             )}
           </button>
 
           {!videoFinished && (
             <p className="text-xs text-[#6497b1] text-center max-w-sm">
-              This button becomes active once you have fully watched the orientation video.
-              You may pause but cannot fast-forward.
+              This is a quick test playback. After it completes, the portal unlocks automatically.
             </p>
           )}
         </div>
