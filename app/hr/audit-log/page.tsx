@@ -1,9 +1,10 @@
 "use client";
 
 import { History, Shield } from 'lucide-react';
-import { INITIAL_AUDIT_LOGS } from '@/lib/mock-data';
+import { useDB } from '@/lib/use-db';
 
 export default function HRAuditLogPage() {
+  const [db] = useDB();
   return (
     <div className="space-y-6">
       <div>
@@ -34,7 +35,7 @@ export default function HRAuditLogPage() {
               </tr>
             </thead>
             <tbody>
-              {INITIAL_AUDIT_LOGS.map((event) => (
+              {db.audit.map((event) => (
                 <tr key={event.id} className="border-t border-[#e2e8f0]">
                   <td className="px-4 py-3 text-xs text-[#6497b1] whitespace-nowrap">
                     {event.timestamp}

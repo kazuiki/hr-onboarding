@@ -12,6 +12,7 @@ import {
   History,
   LogOut,
   Menu,
+  MessageCircle,
   X,
   Bell,
 } from 'lucide-react';
@@ -20,6 +21,7 @@ const NAV_ITEMS = [
   { href: '/hr', label: 'Overview', icon: LayoutDashboard },
   { href: '/hr/employees', label: 'Employees', icon: Users },
   { href: '/hr/reviews', label: 'Review Queue', icon: FileSearch },
+  { href: '/hr/messages', label: 'Messages', icon: MessageCircle },
   { href: '/hr/templates', label: 'Templates', icon: ClipboardList },
   { href: '/hr/audit-log', label: 'Audit Log', icon: History },
 ];

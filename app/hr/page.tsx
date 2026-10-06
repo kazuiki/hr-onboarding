@@ -10,20 +10,18 @@ import {
   ArrowRight,
   ClipboardList,
 } from 'lucide-react';
-import { ALL_EMPLOYEES_LIST, INITIAL_TASKS } from '@/lib/mock-data';
+import { useDB } from '@/lib/use-db';
 
 export default function HROverviewPage() {
-  const totalEmployees = ALL_EMPLOYEES_LIST.length;
-  const pendingReviews = INITIAL_TASKS.filter(
-    (t) => t.status === 'submitted'
-  ).length;
-  const needsChanges = INITIAL_TASKS.filter(
-    (t) => t.status === 'needs_changes'
-  ).length;
-  const avgCompletion = Math.round(
-    ALL_EMPLOYEES_LIST.reduce((sum, e) => sum + e.completion_percentage, 0) /
-      totalEmployees
-  );
+  const [db] = useDB();
+
+  const totalEmployees = db.employees.length;
+  const pendingReviews = db.tasks.filter((t) => t.status === 'submitted').length;
+  const needsChanges = db.tasks.filter((t) => t.status === 'needs_changes').length;
+  const avgCompletion =
+    totalEmployees === 0
+      ? 0
+      : Math.round(db.employees.reduce((sum, e) => sum + e.completion_percentage, 0) / totalEmployees);
 
   const stats = [
     {
@@ -35,14 +33,14 @@ export default function HROverviewPage() {
     },
     {
       label: 'Pending Reviews',
-      value: pendingReviews + 3,
+      value: pendingReviews,
       icon: FileSearch,
       color: 'bg-amber-50 text-amber-700',
       href: '/hr/reviews',
     },
     {
       label: 'Needs Changes',
-      value: needsChanges + 1,
+      value: needsChanges,
       icon: AlertCircle,
       color: 'bg-rose-50 text-rose-700',
       href: '/hr/reviews',
@@ -98,7 +96,7 @@ export default function HROverviewPage() {
             </Link>
           </div>
           <div className="space-y-3">
-            {ALL_EMPLOYEES_LIST.map((emp) => (
+            {db.employees.map((emp) => (
               <div
                 key={emp.id}
                 className="flex items-center justify-between p-3 rounded-xl bg-[#f8fafc] border border-[#e2e8f0]"
@@ -176,11 +174,13 @@ export default function HROverviewPage() {
               <h3 className="text-sm font-bold">Upcoming Start Dates</h3>
             </div>
             <div className="space-y-3">
-              {ALL_EMPLOYEES_LIST.sort(
-                (a, b) =>
-                  new Date(a.start_date).getTime() -
-                  new Date(b.start_date).getTime()
-              ).map((emp) => (
+              {[...db.employees]
+                .sort(
+                  (a, b) =>
+                    new Date(a.start_date).getTime() -
+                    new Date(b.start_date).getTime()
+                )
+                .map((emp) => (
                 <div
                   key={emp.id}
                   className="flex items-center justify-between text-xs"

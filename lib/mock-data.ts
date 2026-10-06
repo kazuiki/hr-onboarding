@@ -113,9 +113,12 @@ export const INITIAL_TASKS: MockTask[] = [
     title: 'PSA Birth Certificate',
     description: 'Official Philippine Statistics Authority (PSA) issued Birth Certificate copy.',
     category: 'document',
-    status: 'not_started',
+    status: 'needs_changes',
     required: true,
     display_order: 2,
+    file_name: 'PSA-birth-cert.jpg',
+    submitted_at: 'Yesterday',
+    feedback: 'The uploaded scan is blurred and the lower portion is cut off. Please re-upload a clear, complete copy.',
   },
   {
     id: 'req-marriage-cert',

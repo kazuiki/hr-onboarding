@@ -10,10 +10,13 @@ import {
   Calendar,
   CheckCircle2,
 } from 'lucide-react';
-import { ALL_EMPLOYEES_LIST, MockEmployeeProfile } from '@/lib/mock-data';
+import { MockEmployeeProfile } from '@/lib/mock-data';
+import { CURRENT_HR_NAME, logAudit } from '@/lib/db';
+import { useDB } from '@/lib/use-db';
 
 export default function HREmployeesPage() {
-  const [employees, setEmployees] = useState<MockEmployeeProfile[]>(ALL_EMPLOYEES_LIST);
+  const [db, updateDB] = useDB();
+  const employees = db.employees;
   const [query, setQuery] = useState('');
   const [department, setDepartment] = useState('all');
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -62,7 +65,16 @@ export default function HREmployeesPage() {
       completion_percentage: 0,
       has_watched_orientation: false,
     };
-    setEmployees((prev) => [newEmployee, ...prev]);
+    updateDB((prev) =>
+      logAudit(
+        { ...prev, employees: [newEmployee, ...prev.employees] },
+        CURRENT_HR_NAME,
+        'hr_manager',
+        'INVITE_EMPLOYEE',
+        newEmployee.full_name,
+        `Invited ${newEmployee.email} with packet for ${newEmployee.start_date || 'TBD'}.`
+      )
+    );
     setInviteSuccess(true);
     setTimeout(() => {
       setInviteSuccess(false);

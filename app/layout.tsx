@@ -13,8 +13,11 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "HR Onboarding Portal",
+  title: "PKII Onboarding",
   description: "Secure employee onboarding management system by Philkoei International, Inc.",
+  icons: {
+    icon: "/pkii-logo-tab.jpg",
+  },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
