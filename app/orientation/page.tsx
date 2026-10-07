@@ -12,7 +12,6 @@ import {
   Shield,
   Unlock,
 } from 'lucide-react';
-import { INITIAL_EMPLOYEE } from '@/lib/mock-data';
 
 const ORIENTATION_WATCHED_KEY = 'pki_orientation_watched';
 
@@ -31,19 +30,25 @@ function formatTime(seconds: number): string {
 export default function OrientationPage() {
   const router = useRouter();
 
-  const [simTime, setSimTime] = useState(0);
+  const [simTime, setSimTime] = useState(() =>
+    typeof window !== 'undefined' && localStorage.getItem(ORIENTATION_WATCHED_KEY) === 'true'
+      ? TEST_DURATION_SECONDS
+      : 0
+  );
   const [isPlaying, setIsPlaying] = useState(false);
-  const [videoFinished, setVideoFinished] = useState(false);
+  const [videoFinished, setVideoFinished] = useState(
+    () => typeof window !== 'undefined' && localStorage.getItem(ORIENTATION_WATCHED_KEY) === 'true'
+  );
   const [isRedirecting, setIsRedirecting] = useState(false);
+  const [displayName, setDisplayName] = useState('');
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const alreadyWatched = localStorage.getItem(ORIENTATION_WATCHED_KEY) === 'true';
-    if (alreadyWatched) {
-      setVideoFinished(true);
-      setIsPlaying(false);
-      setSimTime(TEST_DURATION_SECONDS);
-    }
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.full_name === 'string') setDisplayName(data.full_name);
+      })
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -100,7 +105,7 @@ export default function OrientationPage() {
         <div className="w-full text-center space-y-2">
           <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
             Welcome to Philkoei,{' '}
-            <span className="text-[#b3cde0]">{INITIAL_EMPLOYEE.full_name}!</span>
+            <span className="text-[#b3cde0]">{displayName ? `${displayName}!` : 'new hire!'}</span>
           </h1>
           <p className="text-sm text-[#6497b1] max-w-xl mx-auto leading-relaxed">
             {TEST_MODE

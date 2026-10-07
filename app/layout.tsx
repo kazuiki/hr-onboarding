@@ -16,11 +16,11 @@ export const metadata: Metadata = {
   title: "PKII Onboarding",
   description: "Secure employee onboarding management system by Philkoei International, Inc.",
   icons: {
-    icon: "/pkii-logo-tab.jpg",
+    icon: "/pkiiicon.ico",
   },
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html
       lang="en"

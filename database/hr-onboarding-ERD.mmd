@@ -1,0 +1,290 @@
+erDiagram
+    users ||--|| employees : "1:1 shared PK"
+    users ||--o{ onboarding_templates : creates
+    users ||--o{ sessions : signs_in
+    users ||--o{ notifications : receives
+    users ||--o{ messages : sends
+    users ||--o{ company_settings : edits
+    users ||--o{ hr_assets : uploads
+    users ||--o{ audit_events : acts
+    users ||--o{ onboarding_tasks : reviews
+    users ||--o{ medical_records : reviews
+    users ||--o{ review_decisions : decides
+    users ||--o{ shared_files : shares
+    users ||--o{ message_threads : assigned
+    users ||--o{ privacy_policies : publishes
+    employees ||--|| onboarding_packets : "1:1 packet"
+    employees ||--o{ onboarding_tasks : owns
+    employees ||--|| medical_records : "1:1 sensitive"
+    employees ||--|| first_day_guides : "1:1"
+    employees ||--o{ task_files : uploads
+    employees ||--o{ form_submissions : submits
+    employees ||--o{ privacy_acknowledgements : acks
+    employees ||--o{ shared_files : receives
+    employees ||--o{ message_threads : opens
+    employees ||--o{ review_decisions : subject_of
+    onboarding_templates ||--o{ template_tasks : contains
+    onboarding_templates ||--o{ onboarding_packets : sources
+    onboarding_packets ||--o{ onboarding_tasks : contains
+    onboarding_tasks ||--o{ task_files : has
+    onboarding_tasks ||--o{ form_submissions : has
+    onboarding_tasks ||--o{ review_decisions : judged
+    task_files ||--o{ message_threads : pinned_to
+    task_files ||--o{ review_decisions : pinned_to
+    privacy_policies ||--o{ privacy_acknowledgements : acked_in
+    message_threads ||--o{ messages : has
+
+    users {
+        char id PK
+        varchar email
+        char password_hash
+        enum role
+        varchar full_name
+        text avatar_url
+        tinyint is_active
+        timestamp last_login_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    employees {
+        char id PK, FK
+        varchar employee_number
+        varchar position
+        varchar department
+        varchar manager_name
+        date start_date
+        int access_window_days
+        enum status
+        text avatar_url
+        text welcome_message
+        int completion_pct
+        tinyint orientation_watched
+        text notes
+        timestamp archived_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    company_settings {
+        varchar setting_key PK
+        text value_text
+        json value_json
+        varchar description
+        char updated_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    onboarding_templates {
+        char id PK
+        varchar name
+        text description
+        varchar department
+        tinyint is_active
+        char created_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    template_tasks {
+        char id PK
+        char template_id FK
+        varchar slug
+        varchar title
+        text description
+        enum category
+        tinyint required
+        int display_order
+        json config
+        timestamp created_at
+    }
+    onboarding_packets {
+        char id PK
+        char employee_id FK
+        char template_id FK
+        text welcome_message
+        int completion_pct
+        tinyint orientation_watched
+        timestamp completed_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    onboarding_tasks {
+        varchar id PK
+        char packet_id FK
+        char employee_id PK, FK
+        varchar title
+        text description
+        enum category
+        enum status
+        tinyint required
+        int display_order
+        tinyint has_download
+        varchar template_file_name
+        varchar template_file_path
+        varchar file_name
+        text feedback
+        timestamp submitted_at
+        timestamp reviewed_at
+        char reviewed_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    task_files {
+        char id PK
+        varchar task_id FK
+        char employee_id FK
+        varchar file_name
+        varchar file_path
+        int file_size
+        varchar mime_type
+        enum status
+        text rejection_reason
+        enum uploaded_by
+        timestamp created_at
+        timestamp updated_at
+    }
+    form_submissions {
+        char id PK
+        varchar task_id FK
+        char employee_id FK
+        varchar form_type
+        json form_data
+        enum status
+        timestamp submitted_at
+    }
+    medical_records {
+        char id PK
+        char employee_id FK
+        varchar clinic_name
+        text clinic_address
+        varchar clinic_phone
+        varchar clinic_schedule
+        text expense_notes
+        varchar referral_doc_path
+        varchar proof_doc_path
+        enum status
+        text feedback
+        char reviewed_by FK
+        timestamp reviewed_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    first_day_guides {
+        char id PK
+        char employee_id FK
+        varchar office_name
+        text office_address
+        varchar arrival_time
+        varchar dress_code
+        varchar reporting_to
+        json items_to_bring
+        text intro_video_url
+        text map_instructions
+        tinyint is_acknowledged
+        timestamp acknowledged_at
+        timestamp created_at
+        timestamp updated_at
+    }
+    privacy_policies {
+        char id PK
+        varchar version
+        varchar title
+        text content
+        date effective_date
+        tinyint is_current
+        char created_by FK
+        timestamp created_at
+    }
+    privacy_acknowledgements {
+        char id PK
+        char employee_id FK
+        char policy_id FK
+        varchar policy_version
+        timestamp acknowledged_at
+        varchar ip_address
+        varchar user_agent
+    }
+    hr_assets {
+        char id PK
+        varchar title
+        enum asset_type
+        varchar file_name
+        varchar file_path
+        int file_size
+        varchar mime_type
+        int version
+        tinyint is_current
+        char uploaded_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    shared_files {
+        char id PK
+        char employee_id FK
+        varchar slot
+        varchar file_name
+        varchar file_path
+        int file_size
+        varchar mime_type
+        text notes
+        char uploaded_by FK
+        timestamp created_at
+        timestamp updated_at
+    }
+    message_threads {
+        char id PK
+        char employee_id FK
+        char hr_id FK
+        enum subject_type
+        varchar subject_title
+        varchar task_id
+        char file_id FK
+        enum status
+        timestamp created_at
+        timestamp updated_at
+    }
+    messages {
+        bigint id PK
+        char thread_id FK
+        char sender_id FK
+        enum sender_role
+        text body
+        tinyint is_read
+        timestamp created_at
+    }
+    notifications {
+        bigint id PK
+        char user_id FK
+        enum type
+        varchar title
+        text body
+        varchar link_section
+        varchar task_id
+        tinyint is_read
+        timestamp created_at
+    }
+    review_decisions {
+        char id PK
+        varchar task_id FK
+        char employee_id FK
+        char file_id FK
+        char reviewer_id FK
+        enum decision
+        text comment
+        timestamp created_at
+    }
+    audit_events {
+        char id PK
+        char actor_id FK
+        varchar actor_name
+        enum actor_role
+        varchar action
+        varchar target_type
+        varchar target_id
+        json details
+        timestamp created_at
+    }
+    sessions {
+        char token PK
+        char user_id FK
+        timestamp expires_at
+        timestamp created_at
+    }

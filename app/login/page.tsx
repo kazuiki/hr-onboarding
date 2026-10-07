@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import {
-  Building2,
   Shield,
   User,
   UserCheck,
@@ -14,13 +14,12 @@ import {
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
-import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'employee' | 'hr'>('employee');
-  const [email, setEmail] = useState('maria.santos@philkoei.com.ph');
-  const [password, setPassword] = useState('password123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -28,13 +27,7 @@ export default function LoginPage() {
   const handleTabSwitch = (tab: 'employee' | 'hr') => {
     setActiveTab(tab);
     setErrorMsg('');
-    if (tab === 'employee') {
-      setEmail('maria.santos@philkoei.com.ph');
-      setPassword('password123');
-    } else {
-      setEmail('elena.gomez@philkoei.com.ph');
-      setPassword('hrpassword123');
-    }
+    setSuccessMsg('');
   };
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -44,46 +37,23 @@ export default function LoginPage() {
     setSuccessMsg('');
 
     try {
-      const supabase = createClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
       });
-
-      // If Supabase returned an error or is in local demo mode, handle gracefully
-      if (error && !email.includes('philkoei')) {
-        setErrorMsg(error.message || 'Invalid email or password.');
-        setLoading(false);
+      const data = (await res.json()) as { error?: string; role?: string; full_name?: string };
+      if (!res.ok) {
+        setErrorMsg(data.error || 'Invalid email or password.');
         return;
       }
-
-      setSuccessMsg(`Authenticated successfully as ${activeTab === 'hr' ? 'HR Director' : 'Employee'}. Redirecting...`);
-
+      setSuccessMsg(`Welcome back, ${data.full_name || 'user'}. Redirecting...`);
       setTimeout(() => {
-        if (activeTab === 'hr') {
-          router.push('/hr');
-        } else {
-          // Check if employee has watched orientation
-          const hasWatched = typeof window !== 'undefined' && localStorage.getItem('pki_orientation_watched') === 'true';
-          if (hasWatched) {
-            router.push('/dashboard');
-          } else {
-            router.push('/orientation');
-          }
-        }
+        router.push(data.role === 'employee' ? '/dashboard' : '/hr');
+        router.refresh();
       }, 600);
     } catch {
-      // In case of network/offline, fallback to demo navigation
-      if (activeTab === 'hr') {
-        router.push('/hr');
-      } else {
-        const hasWatched = typeof window !== 'undefined' && localStorage.getItem('pki_orientation_watched') === 'true';
-        if (hasWatched) {
-          router.push('/dashboard');
-        } else {
-          router.push('/orientation');
-        }
-      }
+      setErrorMsg('Could not reach the server. Check your connection and try again.');
     } finally {
       setLoading(false);
     }
@@ -94,12 +64,17 @@ export default function LoginPage() {
       {/* Top Brand Banner */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-8">
         <Link href="/" className="inline-flex items-center gap-3 group">
-          <div className="w-12 h-12 rounded-2xl bg-[#011f4b] flex items-center justify-center shadow-md shadow-[#011f4b]/20 group-hover:bg-[#03396c] transition-colors">
-            <Building2 className="w-6 h-6 text-[#b3cde0]" />
-          </div>
+          <Image
+            src="/PKII-LOGO1.png"
+            alt="Philkoei International, Inc."
+            width={60}
+            height={48}
+            className="h-12 w-auto object-contain shrink-0"
+            priority
+          />
           <div className="text-left">
             <div className="text-xl font-extrabold text-[#011f4b] tracking-tight">
-              Philkoei International
+              Philkoei International Inc.
             </div>
             <div className="text-xs text-[#6497b1] font-medium">
               Employee Onboarding Portal
@@ -144,8 +119,8 @@ export default function LoginPage() {
             </h2>
             <p className="text-xs text-[#6497b1] mt-1">
               {activeTab === 'employee'
-                ? 'Sign in with your registered email to view your onboarding checklist.'
-                : 'Sign in with HR credentials to review submissions and manage templates.'}
+                ? 'Sign in with the email HR registered for you to view your onboarding checklist.'
+                : 'Sign in with HR credentials to review submissions and manage onboarding.'}
             </p>
           </div>
 
@@ -224,42 +199,9 @@ export default function LoginPage() {
             </button>
           </form>
 
-          {/* Quick Demo Selector */}
-          <div className="mt-6 pt-5 border-t border-[#e2e8f0]">
-            <div className="text-[11px] font-semibold uppercase tracking-wider text-[#6497b1] mb-2 text-center">
-              Quick Demo Accounts
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  handleTabSwitch('employee');
-                  setEmail('maria.santos@philkoei.com.ph');
-                  setPassword('password123');
-                }}
-                className="text-left p-2.5 rounded-lg border border-[#b3cde0]/60 bg-[#f8fafc] hover:bg-[#eaf2f8] transition-colors"
-              >
-                <div className="text-xs font-bold text-[#011f4b]">Maria Santos</div>
-                <div className="text-[10px] text-[#6497b1]">New Civil Engineer</div>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handleTabSwitch('hr');
-                  setEmail('elena.gomez@philkoei.com.ph');
-                  setPassword('hrpassword123');
-                }}
-                className="text-left p-2.5 rounded-lg border border-[#b3cde0]/60 bg-[#f8fafc] hover:bg-[#eaf2f8] transition-colors"
-              >
-                <div className="text-xs font-bold text-[#011f4b]">Elena Gomez</div>
-                <div className="text-[10px] text-[#6497b1]">HR Director</div>
-              </button>
-            </div>
-          </div>
-
           <div className="mt-6 flex items-center justify-center gap-2 text-xs text-[#6497b1]">
             <Shield className="w-3.5 h-3.5 text-[#005b96]" />
-            <span>256-bit TLS Encrypted & RLS Protected</span>
+            <span>Credentials verified server-side on every sign-in</span>
           </div>
         </div>
       </div>

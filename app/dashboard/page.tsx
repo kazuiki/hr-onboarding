@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import Image from 'next/image';
 import {
   AlertCircle,
@@ -17,13 +16,13 @@ import {
   ChevronDown,
   Clock,
   Download,
-  Eye,
   FileCheck,
   FileText,
   HelpCircle,
   Hourglass,
   Info,
-  Lock,  LogOut,
+  Lock,
+  LogOut,
   MapPin,
   Menu,
   Phone,
@@ -37,20 +36,8 @@ import {
   X,
 } from 'lucide-react';
 
-import {
-  INITIAL_EMPLOYEE,
-  INITIAL_PRIVACY_TEXT,
-  MockTask,
-} from '@/lib/mock-data';
-import {
-  CURRENT_EMPLOYEE_ID,
-  hrName,
-  logAudit,
-  sendMessage,
-  uid,
-} from '@/lib/db';
-import { useDB } from '@/lib/use-db';
-import { TaskStatus } from '@/supabase/types/database.types';
+import { EMPLOYMENT_FORMS, type TaskStatus } from '@/lib/onboarding';
+import { useMe } from '@/lib/use-me';
 
 type NavSection =
   | 'welcome'
@@ -96,20 +83,6 @@ const MILESTONES: Milestone[] = [
   { id: 'privacy', step: 6, title: 'Privacy Policy', target: 'privacy' },
 ];
 
-interface EmploymentForm {
-  id: string;
-  title: string;
-  desc: string;
-}
-
-const EMPLOYMENT_FORMS: EmploymentForm[] = [
-  { id: 'form-data-privacy', title: 'Data Privacy Form', desc: 'Company data privacy agreement' },
-  { id: 'form-manual-conforme', title: 'Employee Manual Conforme', desc: 'Acknowledgment of employee handbook' },
-  { id: 'form-id-conforme', title: 'Company ID Conforme', desc: 'Company ID request and agreement' },
-  { id: 'form-code-conduct', title: 'NK Code of Conduct', desc: 'Code of conduct acknowledgment' },
-  { id: 'form-comprehension', title: 'Comprehension Test', desc: 'Employee handbook comprehension assessment' },
-];
-
 const ORIENTATION_ITEMS: string[] = [
   'HR Orientation',
   'Administrative Orientation',
@@ -123,18 +96,140 @@ const ORIENTATION_ITEMS: string[] = [
   'Orientation with Immediate Superior',
 ];
 
-interface BringItem {
-  title: string;
-  desc: string;
+const PRE_EMPLOYMENT_IDS = [
+  'req-app-form',
+  'req-psa-birth',
+  'req-marriage-cert',
+  'req-sss',
+  'req-philhealth',
+  'req-photo',
+  'req-bir-2316',
+  'req-pagibig',
+  'req-bir-1902',
+  'req-diploma',
+  'req-tor',
+  'req-prc',
+  'req-nbi',
+  'req-coe',
+];
+
+interface ApiEmployee {
+  id: string;
+  employee_number: string;
+  position: string;
+  department: string;
+  manager_name: string;
+  start_date: string;
+  access_window_days: number;
+  status: string;
+  avatar_url: string | null;
+  welcome_message: string | null;
+  completion_pct: number;
+  orientation_watched: number;
+  email: string;
+  full_name: string;
 }
 
-const BRING_ITEMS: BringItem[] = [
-  { title: 'Valid ID', desc: 'Government-issued ID for registration.' },
-  { title: 'Pen and Notebook', desc: 'For taking notes during orientation.' },
-  { title: 'Completed Documents', desc: 'Any additional forms provided by HR.' },
-  { title: 'Jacket', desc: 'For cold rooms or air-conditioned areas.' },
-  { title: 'Professional Attitude', desc: 'Bring your best, smile and positive energy!' },
-];
+interface ApiTask {
+  id: string;
+  title: string;
+  description: string | null;
+  category: string;
+  status: TaskStatus;
+  required: number;
+  display_order: number;
+  has_download: number;
+  template_file_name: string | null;
+  template_file_path: string | null;
+  file_name: string | null;
+  feedback: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+}
+
+interface ApiTaskFile {
+  id: string;
+  task_id: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
+  status: string;
+  created_at: string;
+}
+
+interface SharedFileRow {
+  slot: string;
+  file_name: string;
+  file_path: string;
+  file_size: number;
+  mime_type: string;
+  notes: string | null;
+  updated_at: string;
+}
+
+interface ApiNotification {
+  id: number;
+  type: string;
+  title: string;
+  body: string | null;
+  link_section: string | null;
+  task_id: string | null;
+  is_read: number;
+  created_at: string;
+}
+
+interface ApiThread {
+  id: string;
+  subject_type: string;
+  subject_title: string;
+  task_id: string | null;
+  status: string;
+  updated_at: string;
+}
+
+interface ApiMessage {
+  id: number;
+  thread_id: string;
+  sender_id: string;
+  sender_role: 'employee' | 'hr';
+  body: string;
+  created_at: string;
+}
+
+interface Packet {
+  employee: ApiEmployee;
+  tasks: ApiTask[];
+  files: ApiTaskFile[];
+  sharedFiles: SharedFileRow[];
+  medical: {
+    clinic_name: string;
+    clinic_address: string | null;
+    clinic_phone: string | null;
+    clinic_schedule: string | null;
+    expense_notes: string | null;
+    referral_doc_path: string | null;
+    status: string;
+    feedback: string | null;
+  } | null;
+  firstDay: {
+    office_name: string;
+    office_address: string;
+    arrival_time: string;
+    dress_code: string;
+    reporting_to: string;
+    items_to_bring: string | null;
+    intro_video_url: string | null;
+    map_instructions: string | null;
+    is_acknowledged: number;
+  } | null;
+  privacyPolicy: { id: string; version: string; title: string; content: string; effective_date: string } | null;
+  privacyAcknowledged: boolean;
+  notifications: ApiNotification[];
+  unreadCount: number;
+  threads: ApiThread[];
+  messages: ApiMessage[];
+}
 
 function renderStatusBadge(status: TaskStatus) {
   switch (status) {
@@ -175,106 +270,133 @@ function renderStatusBadge(status: TaskStatus) {
   }
 }
 
+function initialsOf(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase();
+}
+
 export default function EmployeeDashboardPage() {
   const router = useRouter();
+  const { me, loading: meLoading } = useMe({ allow: ['employee'] });
 
-  const [employee] = useState(INITIAL_EMPLOYEE);
-  // Shared employee <-> HR datastore (tasks, threads, messages, notifications, audit).
-  const [db, updateDB] = useDB();
-  const tasks = db.tasks;
+  const [packet, setPacket] = useState<Packet | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
 
-  // Active section controlled by Left Sidebar (defaulting to pre_employment as requested)
+  const employee = packet?.employee ?? null;
+  const tasks = useMemo(() => packet?.tasks ?? [], [packet]);
+
+  const loadPacket = async () => {
+    try {
+      const res = await fetch('/api/me/packet', { cache: 'no-store' });
+      if (!res.ok) throw new Error();
+      const data = (await res.json()) as Packet;
+      setPacket(data);
+      setLoadError('');
+    } catch {
+      setLoadError('Could not load your onboarding packet. Check your connection and refresh.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (me) void loadPacket();
+  }, [me]);
+
+  // Active section controlled by Left Sidebar
   const [activeSection, setActiveSection] = useState<NavSection>('pre_employment');
 
   // Mobile drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  // Mobile checklist collapsible (default open so progress visible)
+  // Mobile checklist collapsible
   const [mobileChecklistOpen, setMobileChecklistOpen] = useState(true);
 
   // Header notifications dropdown
   const [notifOpen, setNotifOpen] = useState(false);
 
-  // First day orientation checklist progress
-  const [orientationChecks, setOrientationChecks] = useState<boolean[]>(
-    () => Array(ORIENTATION_ITEMS.length).fill(false)
+  // First day orientation checklist progress (day-of tracker)
+  const [orientationChecks, setOrientationChecks] = useState<boolean[]>(() =>
+    Array(ORIENTATION_ITEMS.length).fill(false)
   );
 
-  // First day readiness acknowledgement
-  const [firstDayReady, setFirstDayReady] = useState(false);
-
-  // Data privacy acknowledgement
-  const [privacyAck, setPrivacyAck] = useState(false);
-
-  // Medical section reviewed acknowledgement
-  const [medicalReviewed, setMedicalReviewed] = useState(false);
+  // Acknowledgements come straight from the server record.
+  const firstDayReady = (packet?.firstDay?.is_acknowledged ?? 0) === 1;
+  const privacyAck = packet?.privacyAcknowledged ?? false;
+  const medicalReviewed =
+    packet?.medical?.status === 'submitted' || packet?.medical?.status === 'approved';
 
   // Modals & Upload State
-  const [uploadTask, setUploadTask] = useState<MockTask | null>(null);
+  const [uploadTask, setUploadTask] = useState<{ id: string; title: string; required: boolean } | null>(null);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [uploading, setUploading] = useState(false);
 
-  // Multiple uploaded files per requirement (spec: multiple files allowed per requirement)
-  const [reqFiles, setReqFiles] = useState<Record<string, { name: string; sizeLabel: string }[]>>(() => {
-    const seeded: Record<string, { name: string; sizeLabel: string }[]> = {};
-    tasks.forEach((t) => {
-      if (t.file_name) seeded[t.id] = [{ name: t.file_name, sizeLabel: 'Uploaded' }];
-    });
-    return seeded;
-  });
+  // Files per requirement, derived from the server file list
+  const reqFiles = useMemo(() => {
+    const map: Record<string, { name: string; sizeLabel: string; path: string }[]> = {};
+    for (const f of packet?.files ?? []) {
+      (map[f.task_id] = map[f.task_id] || []).push({
+        name: f.file_name,
+        sizeLabel: formatFileSize(f.file_size),
+        path: f.file_path,
+      });
+    }
+    return map;
+  }, [packet]);
 
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
-  // Help Chat State: help threads live in shared db (HR inbox reads the same rows).
+  // Help Chat State
   const [chatInput, setChatInput] = useState('');
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const chatEndRef = useRef<HTMLDivElement | null>(null);
 
   const helpThreads = useMemo(
     () =>
-      db.threads
-        .filter((t) => t.subject_type === 'help' && t.employee_id === CURRENT_EMPLOYEE_ID)
+      (packet?.threads ?? [])
+        .filter((t) => t.subject_type === 'help')
         .sort((a, b) => (a.updated_at > b.updated_at ? -1 : 1)),
-    [db.threads]
+    [packet]
   );
   const activeThread = helpThreads.find((t) => t.id === activeThreadId) ?? helpThreads[0] ?? null;
   const chatMessages = useMemo(
-    () => db.messages.filter((m) => activeThread && m.thread_id === activeThread.id),
-    [db.messages, activeThread]
+    () => (packet?.messages ?? []).filter((m) => activeThread && m.thread_id === activeThread.id),
+    [packet, activeThread]
   );
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [chatMessages, activeSection]);
 
-  // Photo Upload State
-  interface UploadedPhoto {
-    id: string;
-    name: string;
-    sizeLabel: string;
-    previewUrl: string;
-  }
-
-  const [uploadedPhotos, setUploadedPhotos] = useState<UploadedPhoto[]>([
-    {
-      id: 'seed-me',
-      name: 'Me.png',
-      sizeLabel: '200.12 KB',
-      previewUrl:
-        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=400&auto=format&fit=crop',
-    },
-  ]);
+  // ID photos come from the server file list for the photo requirement
+  const uploadedPhotos = useMemo(
+    () =>
+      (packet?.files ?? [])
+        .filter((f) => f.task_id === 'req-photo')
+        .map((f) => ({ id: f.id, name: f.file_name, sizeLabel: formatFileSize(f.file_size), previewUrl: f.file_path })),
+    [packet]
+  );
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
 
-  // Form Inputs State
+  // Personal data assistant inputs (submitted to HR, never prefilled)
   const [pdsData, setPdsData] = useState({
-    tin: '321-456-789-000',
-    sss: '34-5678912-3',
-    philhealth: '12-345678901-2',
-    pagibig: '1234-5678-9012',
-    bankAccount: 'BDO Unibank - 004812399120',
-    emergencyContact: 'Carlos Santos (Spouse) - +63 917 555 0192',
+    tin: '',
+    sss: '',
+    philhealth: '',
+    pagibig: '',
+    bankAccount: '',
+    emergencyContact: '',
   });
 
   // Check orientation gate
@@ -287,50 +409,74 @@ export default function EmployeeDashboardPage() {
   }, [router]);
 
   // Overall Progress Calculation
-  const totalRequired = tasks.filter((t) => t.required).length;
-  const approvedCount = tasks.filter((t) => t.required && t.status === 'approved').length;
+  const totalRequired = tasks.filter((t) => t.required === 1).length;
+  const approvedCount = tasks.filter((t) => t.required === 1 && t.status === 'approved').length;
   const progressPct = Math.round((approvedCount / (totalRequired || 1)) * 100);
+
+  // Days left inside the onboarding window
+  const remainingDays = useMemo(() => {
+    if (!employee) return null;
+    const windowDays = employee.access_window_days || 30;
+    const end = new Date(`${employee.start_date}T00:00:00`).getTime() + windowDays * 86400000;
+    // eslint-disable-next-line react-hooks/purity -- clock read for a countdown label
+    return Math.max(0, Math.ceil((end - Date.now()) / 86400000));
+  }, [employee]);
 
   // Filter tasks specific to Pre-Employment Requirements checklist
   const preEmploymentRequirements = useMemo(() => {
-    return tasks.filter((t) =>
-      [
-        'req-app-form',
-        'req-psa-birth',
-        'req-marriage-cert',
-        'req-sss',
-        'req-philhealth',
-        'req-photo',
-        'req-bir-2316',
-        'req-pagibig',
-        'req-bir-1902',
-        'req-diploma',
-        'req-tor',
-        'req-prc',
-        'req-nbi',
-        'req-coe',
-      ].includes(t.id)
-    );
+    return tasks.filter((t) => PRE_EMPLOYMENT_IDS.includes(t.id));
   }, [tasks]);
 
-  // HR alerts: tasks HR flagged with feedback (e.g. blurred PSA rejected).
+  // HR alerts: tasks HR flagged with feedback
   const hrAlerts = useMemo(() => {
     return tasks.filter((t) => t.status === 'needs_changes' && t.feedback);
   }, [tasks]);
 
-  // Stored bell feed (chat replies, file comments, approvals) for this employee.
   const myNotifications = useMemo(() => {
-    return db.notifications.filter((n) => n.user_id === CURRENT_EMPLOYEE_ID).slice(0, 8);
-  }, [db.notifications]);
-  const unreadCount = useMemo(() => {
-    return hrAlerts.length + myNotifications.filter((n) => !n.is_read).length;
-  }, [hrAlerts, myNotifications]);
+    return (packet?.notifications ?? []).slice(0, 8);
+  }, [packet]);
 
-  const markNotifRead = (id: string) => {
-    updateDB((prev) => ({
-      ...prev,
-      notifications: prev.notifications.map((n) => (n.id === id ? { ...n, is_read: true } : n)),
-    }));
+  const serverUnread = packet?.unreadCount ?? 0;
+  const unreadCount = useMemo(() => {
+    return hrAlerts.length + serverUnread;
+  }, [hrAlerts, serverUnread]);
+
+  const sharedBySlot = useMemo(() => {
+    const map: Record<string, SharedFileRow> = {};
+    for (const row of packet?.sharedFiles ?? []) map[row.slot] = row;
+    return map;
+  }, [packet]);
+
+  const bringItems = useMemo(() => {
+    const raw = packet?.firstDay?.items_to_bring;
+    if (!raw) return [] as string[];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return Array.isArray(parsed) ? parsed.map(String) : [];
+    } catch {
+      return [];
+    }
+  }, [packet]);
+
+  const markNotifRead = async (id: number) => {
+    try {
+      await fetch('/api/notifications', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      setPacket((prev) =>
+        prev
+          ? {
+              ...prev,
+              notifications: prev.notifications.map((n) => (n.id === id ? { ...n, is_read: 1 } : n)),
+              unreadCount: Math.max(0, prev.unreadCount - 1),
+            }
+          : prev
+      );
+    } catch {
+      // Bell state refreshes on next packet load.
+    }
   };
 
   const sectionForLink = (link: string | null): NavSection => {
@@ -353,7 +499,7 @@ export default function EmployeeDashboardPage() {
     }
   };
 
-  const taskSection = (category: MockTask['category']): NavSection => {
+  const taskSection = (category: string): NavSection => {
     switch (category) {
       case 'photo':
         return 'photo';
@@ -372,81 +518,78 @@ export default function EmployeeDashboardPage() {
     }
   };
 
-  const handleFileUpload = (e: React.SyntheticEvent) => {
-    e.preventDefault();
-    if (!uploadTask || uploadFiles.length === 0) return;
-
-    const newFiles = uploadFiles.map((f) => ({ name: f.name, sizeLabel: formatFileSize(f.size) }));
-    setReqFiles((prev) => ({
-      ...prev,
-      [uploadTask.id]: [...(prev[uploadTask.id] ?? []), ...newFiles],
-    }));
-
-    const taskId = uploadTask.id;
-    const firstName = uploadFiles[0].name;
-    const taskTitle = uploadTask.title;
-    updateDB((prev) =>
-      logAudit(
-        {
-          ...prev,
-          tasks: prev.tasks.map((t) =>
-            t.id === taskId
-              ? {
-                  ...t,
-                  status: 'submitted',
-                  file_name: firstName,
-                  submitted_at: 'Just now',
-                  feedback: undefined,
-                }
-              : t
-          ),
-        },
-        employee.full_name,
-        'employee',
-        'UPLOAD',
-        taskTitle,
-        `${uploadFiles.length} file(s) submitted for review.`
-      )
-    );
-
-    setUploadSuccess(true);
-    setTimeout(() => {
-      setUploadSuccess(false);
-      setUploadTask(null);
-      setUploadFiles([]);
-    }, 1200);
+  const handleSignOut = async () => {
+    await fetch('/api/auth/logout', { method: 'POST' });
+    router.push('/login');
+    router.refresh();
   };
 
-  const handleSendChat = (e: React.SyntheticEvent) => {
+  const handleFileUpload = async (e: React.SyntheticEvent) => {
+    e.preventDefault();
+    if (!uploadTask || uploadFiles.length === 0) return;
+    setUploading(true);
+    setUploadError('');
+    setActionError('');
+    try {
+      const payload = new FormData();
+      for (const f of uploadFiles) payload.append('files', f);
+      const url = uploadTask.id.startsWith('form-')
+        ? '/api/forms/submit'
+        : `/api/tasks/${encodeURIComponent(uploadTask.id)}/submit`;
+      if (uploadTask.id.startsWith('form-')) payload.append('formType', uploadTask.id);
+      const res = await fetch(url, { method: 'POST', body: payload });
+      const data = await res.json();
+      if (!res.ok) {
+        setUploadError(data.error || 'Upload failed. Try again.');
+        return;
+      }
+      setUploadSuccess(true);
+      await loadPacket();
+      setTimeout(() => {
+        setUploadSuccess(false);
+        setUploadTask(null);
+        setUploadFiles([]);
+      }, 1200);
+    } catch {
+      setUploadError('Could not reach the server. Try again.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSendChat = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     const text = chatInput.trim();
     if (!text) return;
-
-    // Reuse the open help thread, else start one. HR inbox reads the same rows.
-    const threadId = activeThread && activeThread.status !== 'closed' ? activeThread.id : null;
-    updateDB((prev) => {
-      let next = prev;
-      let tid = threadId;
-      if (!tid) {
-        const thread = {
-          id: uid('thr'),
-          employee_id: CURRENT_EMPLOYEE_ID,
-          hr_id: null as string | null,
-          subject_type: 'help' as const,
-          subject_title: text.length > 48 ? `${text.slice(0, 48)}...` : text,
-          task_id: null as string | null,
-          file_name: null as string | null,
-          status: 'open' as const,
-          updated_at: 'Just now',
-        };
-        tid = thread.id;
-        next = { ...next, threads: [thread, ...next.threads] };
+    setActionError('');
+    try {
+      const threadId = activeThread && activeThread.status !== 'closed' ? activeThread.id : null;
+      if (threadId) {
+        const res = await fetch(`/api/threads/${threadId}/messages`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ body: text }),
+        });
+        if (!res.ok) throw new Error();
+        setActiveThreadId(threadId);
+      } else {
+        const res = await fetch('/api/threads', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            subject: text.length > 48 ? `${text.slice(0, 48)}...` : text,
+            body: text,
+          }),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        setActiveThreadId(data.id);
       }
-      next = sendMessage(next, tid, CURRENT_EMPLOYEE_ID, 'employee', text);
-      return logAudit(next, employee.full_name, 'employee', 'CHAT_SEND', tid, text.slice(0, 120));
-    });
-    setActiveThreadId(threadId);
-    setChatInput('');
+      setChatInput('');
+      await loadPacket();
+    } catch {
+      setActionError('Message could not be sent. Try again.');
+    }
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -455,30 +598,123 @@ export default function EmployeeDashboardPage() {
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
 
-  const handlePhotoFiles = (files: FileList | null) => {
+  const handlePhotoFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const accepted = ['image/png', 'image/jpeg', 'image/jpg'];
-    Array.from(files).forEach((file) => {
-        if (!accepted.includes(file.type) && !/\.(png|jpe?g)$/i.test(file.name)) {
-          alert(`"${file.name}" is not supported. Please upload PNG, JPG, or JPEG.`);
-          return;
-        }
-        if (file.size > 5 * 1024 * 1024) {
-          alert(`"${file.name}" exceeds 5MB. Please choose a smaller file.`);
-          return;
-        }
-        const previewUrl = URL.createObjectURL(file);
-        setUploadedPhotos((prev) => [
-          ...prev,
-          {
-            id: `photo-${Date.now()}-${file.name}`,
-            name: file.name,
-            sizeLabel: formatFileSize(file.size),
-            previewUrl,
-          },
-        ]);
-      });
+    const valid = Array.from(files).filter((file) => {
+      if (!accepted.includes(file.type) && !/\.(png|jpe?g)$/i.test(file.name)) {
+        alert(`"${file.name}" is not supported. Please upload PNG, JPG, or JPEG.`);
+        return false;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        alert(`"${file.name}" exceeds 5MB. Please choose a smaller file.`);
+        return false;
+      }
+      return true;
+    });
+    if (valid.length === 0) return;
+    setActionError('');
+    try {
+      const payload = new FormData();
+      for (const f of valid) payload.append('files', f);
+      const res = await fetch('/api/tasks/req-photo/submit', { method: 'POST', body: payload });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.error || 'Photo upload failed.');
+        return;
+      }
+      await loadPacket();
+    } catch {
+      setActionError('Could not reach the server. Try again.');
+    }
   };
+
+  const handleMedicalReviewed = async () => {
+    setActionError('');
+    try {
+      const res = await fetch('/api/me/medical', { method: 'POST' });
+      if (!res.ok) throw new Error();
+      await loadPacket();
+    } catch {
+      setActionError('Could not save. Try again.');
+    }
+  };
+
+  const handleFirstDayReady = async () => {
+    setActionError('');
+    try {
+      const res = await fetch('/api/me/firstday', { method: 'POST' });
+      if (!res.ok) throw new Error();
+      await loadPacket();
+    } catch {
+      setActionError('Could not save. Try again.');
+    }
+  };
+
+  const handlePrivacyAck = async () => {
+    if (!packet?.privacyPolicy) return;
+    setActionError('');
+    try {
+      const res = await fetch('/api/privacy/ack', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ policyId: packet.privacyPolicy.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.error || 'Could not save acknowledgement.');
+        return;
+      }
+      await loadPacket();
+    } catch {
+      setActionError('Could not reach the server. Try again.');
+    }
+  };
+
+  const handlePdsSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setActionError('');
+    try {
+      const res = await fetch('/api/forms/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ formType: 'personal-data', formData: pdsData }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.error || 'Could not submit the form.');
+        return;
+      }
+      setIsFormModalOpen(false);
+      await loadPacket();
+    } catch {
+      setActionError('Could not reach the server. Try again.');
+    }
+  };
+
+  if (meLoading || !me || loading || !packet || !employee) {
+    return (
+      <div className="min-h-screen bg-[#f8fafc] flex items-center justify-center">
+        {loadError ? (
+          <div className="text-center space-y-3 px-6">
+            <p className="text-sm text-rose-600">{loadError}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setLoading(true);
+                void loadPacket();
+              }}
+              className="px-5 py-2.5 text-xs font-bold bg-[#011f4b] text-white rounded-xl"
+            >
+              Retry
+            </button>
+          </div>
+        ) : (
+          <div className="w-8 h-8 border-2 border-[#b3cde0] border-t-[#005b96] rounded-full animate-spin" />
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-[#0f172a] flex flex-col font-sans">
@@ -579,7 +815,7 @@ export default function EmployeeDashboardPage() {
                           key={n.id}
                           type="button"
                           onClick={() => {
-                            markNotifRead(n.id);
+                            void markNotifRead(n.id);
                             setActiveSection(sectionForLink(n.link_section));
                             setNotifOpen(false);
                           }}
@@ -611,48 +847,30 @@ export default function EmployeeDashboardPage() {
                           </div>
                         </button>
                       ))}
-                      <div className="flex items-start gap-2.5 px-4 py-3">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-[#011f4b] leading-snug">
-                            Your PSA Birth Certificate was approved.
-                          </p>
-                          <p className="text-[11px] text-[#6497b1] mt-0.5">2 hours ago</p>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-2.5 px-4 py-3">
-                        <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-[#011f4b] leading-snug">
-                            Reminder: complete your medical exam before your start date.
-                          </p>
-                          <p className="text-[11px] text-[#6497b1] mt-0.5">1 day ago</p>
-                        </div>
-                      </div>
-                      <div className="flex items-start gap-2.5 px-4 py-3">
-                        <Sparkles className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
-                        <div className="min-w-0">
-                          <p className="text-xs font-semibold text-[#011f4b] leading-snug">
-                            Welcome aboard! Orientation is now unlocked.
-                          </p>
-                          <p className="text-[11px] text-[#6497b1] mt-0.5">3 days ago</p>
-                        </div>
-                      </div>
+                      {hrAlerts.length === 0 && myNotifications.length === 0 && (
+                        <p className="px-4 py-6 text-xs text-[#6497b1] text-center">
+                          You are all caught up.
+                        </p>
+                      )}
                     </div>
                   </div>
                 )}
               </div>
 
-              {/* User Profile Info with countdown below name - visible on mobile too */}
+              {/* User Profile Info with countdown below name */}
               <div className="flex items-center gap-1.5 sm:gap-3 bg-[#f8fafc] px-1.5 sm:px-3 py-0.5 sm:py-1.5 rounded-lg sm:rounded-xl border border-[#e2e8f0] min-w-0 max-w-[34vw] min-[420px]:max-w-[30vw] sm:max-w-none overflow-hidden">
-                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full overflow-hidden border border-[#b3cde0] shrink-0 bg-[#005b96]">
-                  <Image
-                    src={employee.avatar_url}
-                    alt={employee.full_name}
-                    width={32}
-                    height={32}
-                    className="w-full h-full object-cover"
-                  />
+                <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full overflow-hidden border border-[#b3cde0] shrink-0 bg-[#005b96] flex items-center justify-center text-[10px] font-bold text-white">
+                  {employee.avatar_url ? (
+                    <Image
+                      src={employee.avatar_url}
+                      alt={employee.full_name}
+                      width={32}
+                      height={32}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    initialsOf(employee.full_name)
+                  )}
                 </div>
                 <div className="text-left min-w-0 leading-none">
                   <div className="text-[11px] sm:text-xs font-bold text-[#011f4b] leading-tight truncate whitespace-nowrap">
@@ -660,19 +878,26 @@ export default function EmployeeDashboardPage() {
                   </div>
                   <div className="flex items-center gap-1 mt-0.5 min-w-0">
                     <Hourglass className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-500 animate-pulse shrink-0" />
-                    <span className="text-[9px] sm:text-[10px] font-semibold text-amber-600 whitespace-nowrap truncate leading-tight">30 days remaining</span>
+                    <span className="text-[9px] sm:text-[10px] font-semibold text-amber-600 whitespace-nowrap truncate leading-tight">
+                      {remainingDays === null
+                        ? 'Loading...'
+                        : remainingDays > 0
+                          ? `${remainingDays} days remaining`
+                          : 'Access window closed'}
+                    </span>
                   </div>
                 </div>
               </div>
 
               {/* Sign Out (desktop only; mobile uses drawer sidebar logout) */}
-              <Link
-                href="/login"
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
                 className="hidden sm:inline-flex text-[#6497b1] hover:text-[#011f4b] p-2 rounded-xl hover:bg-[#eaf2f8] transition-colors shrink-0"
                 title="Sign Out"
               >
                 <LogOut className="w-4 h-4" />
-              </Link>
+              </button>
             </div>
           </div>
         </div>
@@ -685,6 +910,15 @@ export default function EmployeeDashboardPage() {
           />
         </div>
       </header>
+
+      {actionError && (
+        <div className="max-w-[1600px] w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4">
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 flex items-start gap-2">
+            <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>{actionError}</span>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Drawer Overlay */}
       {drawerOpen && (
@@ -770,13 +1004,14 @@ export default function EmployeeDashboardPage() {
 
             {/* Sign Out at bottom of drawer */}
             <div className="p-4 border-t border-[#e2e8f0]">
-              <Link
-                href="/login"
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
                 className="flex items-center gap-2 text-xs font-semibold text-[#6497b1] hover:text-rose-600 transition-colors px-3 py-2 rounded-xl hover:bg-rose-50"
               >
                 <LogOut className="w-4 h-4" />
                 Sign Out
-              </Link>
+              </button>
             </div>
           </aside>
         </div>
@@ -834,7 +1069,7 @@ export default function EmployeeDashboardPage() {
 
           {/* 3. Main Content Area */}
           <main className="lg:col-span-6 space-y-4 sm:space-y-6">
-            {/* Mobile: Getting Started Checklist (mirrors desktop right sidebar) */}
+            {/* Mobile: Getting Started Checklist */}
             <section
               aria-label="Getting Started Checklist"
               className="lg:hidden bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden"
@@ -946,7 +1181,7 @@ export default function EmployeeDashboardPage() {
                           <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
                             <h3 className="text-sm font-bold text-[#011f4b] leading-snug break-words">
                               {req.title}
-                              {req.required ? (
+                              {req.required === 1 ? (
                                 <span className="text-rose-600 font-extrabold ml-1" title="Mandatory">*</span>
                               ) : (
                                 <span className="text-xs font-normal text-[#6497b1] ml-1.5 italic">
@@ -964,26 +1199,16 @@ export default function EmployeeDashboardPage() {
                           {(reqFiles[req.id] ?? []).length > 0 && (
                             <div className="flex flex-wrap gap-1.5 pt-1">
                               {(reqFiles[req.id] ?? []).map((f) => (
-                                <span
+                                <a
                                   key={`${req.id}-${f.name}`}
-                                  className="inline-flex items-center gap-1.5 text-xs text-[#005b96] font-semibold bg-[#eaf2f8] pl-2.5 pr-1.5 py-1 rounded-md max-w-full"
+                                  href={f.path}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="inline-flex items-center gap-1.5 text-xs text-[#005b96] font-semibold bg-[#eaf2f8] px-2.5 py-1 rounded-md max-w-full hover:underline"
                                 >
                                   <FileCheck className="w-3.5 h-3.5 shrink-0" />
                                   <span className="truncate max-w-[140px] min-[420px]:max-w-[200px]">{f.name}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() =>
-                                      setReqFiles((prev) => ({
-                                        ...prev,
-                                        [req.id]: (prev[req.id] ?? []).filter((x) => x.name !== f.name),
-                                      }))
-                                    }
-                                    aria-label={`Remove ${f.name}`}
-                                    className="p-0.5 rounded text-[#6497b1] hover:text-rose-600 transition-colors shrink-0"
-                                  >
-                                    <X className="w-3.5 h-3.5" />
-                                  </button>
-                                </span>
+                                </a>
                               ))}
                             </div>
                           )}
@@ -998,24 +1223,33 @@ export default function EmployeeDashboardPage() {
 
                         {/* Actions */}
                         <div className="flex flex-col min-[420px]:flex-row gap-2 shrink-0">
-                          {req.has_download && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                alert(
-                                  'Downloading official Employment Application Form template (PDF)...'
-                                );
-                              }}
-                              className="inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2 text-xs font-semibold whitespace-nowrap border border-[#b3cde0] text-[#005b96] hover:bg-[#eaf2f8] rounded-xl transition-colors min-h-11"
-                            >
-                              <Download className="w-3.5 h-3.5 shrink-0" />
-                              Download Form
-                            </button>
+                          {req.has_download === 1 && (
+                            req.template_file_path ? (
+                              <a
+                                href={req.template_file_path}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2 text-xs font-semibold whitespace-nowrap border border-[#b3cde0] text-[#005b96] hover:bg-[#eaf2f8] rounded-xl transition-colors min-h-11"
+                              >
+                                <Download className="w-3.5 h-3.5 shrink-0" />
+                                Download Form
+                              </a>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled
+                                title="No file uploaded by HR yet"
+                                className="inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2 text-xs font-semibold whitespace-nowrap border border-[#e2e8f0] bg-slate-100 text-slate-400 rounded-xl cursor-not-allowed min-h-11"
+                              >
+                                <Download className="w-3.5 h-3.5 shrink-0" />
+                                Download Form
+                              </button>
+                            )
                           )}
 
                           <button
                             type="button"
-                            onClick={() => setUploadTask(req)}
+                            onClick={() => setUploadTask({ id: req.id, title: req.title, required: req.required === 1 })}
                             className="inline-flex items-center justify-center gap-1.5 bg-[#005b96] hover:bg-[#03396c] text-white text-xs font-semibold whitespace-nowrap px-5 py-3 min-[420px]:py-2 rounded-xl transition-colors shadow-sm min-h-11"
                           >
                             <UploadCloud className="w-3.5 h-3.5 shrink-0" />
@@ -1044,6 +1278,37 @@ export default function EmployeeDashboardPage() {
 
                 {/* Employee Information Card */}
                 <div className="bg-[#f1f5f9] rounded-2xl border border-[#e2e8f0] p-4 sm:p-6">
+                  {/* User Profile Header */}
+                  <div className="flex flex-col items-center text-center gap-3 pb-5 mb-5 border-b border-[#e2e8f0]">
+                    <div className="relative">
+                      <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-4 border-white shadow-md bg-[#005b96] ring-2 ring-[#b3cde0] flex items-center justify-center text-2xl font-extrabold text-white">
+                        {employee.avatar_url ? (
+                          <Image
+                            src={employee.avatar_url}
+                            alt={employee.full_name}
+                            width={112}
+                            height={112}
+                            className="w-full h-full object-cover"
+                            priority
+                          />
+                        ) : (
+                          initialsOf(employee.full_name)
+                        )}
+                      </div>
+                      <span className="absolute bottom-1 right-1 w-5 h-5 rounded-full bg-emerald-500 ring-2 ring-white flex items-center justify-center" title="Active">
+                        <Check className="w-3 h-3 text-white" />
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <h2 className="text-base sm:text-lg font-extrabold text-[#011f4b] leading-tight break-words">
+                        {employee.full_name}
+                      </h2>
+                      <p className="text-xs sm:text-sm font-semibold text-[#005b96] mt-0.5">
+                        {employee.position}
+                      </p>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-x-6 gap-y-4">
                     <div className="min-w-0">
                       <span className="text-xs text-[#6497b1] block leading-tight">Name</span>
@@ -1083,7 +1348,7 @@ export default function EmployeeDashboardPage() {
                       We are excited to have you on board and want to ensure you have everything you need for a smooth start.
                     </p>
                     <p className="text-xs sm:text-sm text-[#b3cde0] leading-relaxed">
-                      Before your starting date, we kindly ask that you complete the following tasks and review the documents by following the instructions below.
+                      {employee.welcome_message || 'Before your starting date, we kindly ask that you complete the following tasks and review the documents by following the instructions below.'}
                     </p>
                     <p className="text-xs sm:text-sm font-semibold text-white leading-relaxed pt-1">
                       Your access to the link will be until one month from now. So keep working on it!
@@ -1137,57 +1402,68 @@ export default function EmployeeDashboardPage() {
                 </div>
 
                 <div className="space-y-3 sm:space-y-4">
-                  {EMPLOYMENT_FORMS.map((formItem) => (
-                    <div
-                      key={formItem.id}
-                      className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-5 shadow-sm flex flex-col gap-4"
-                    >
-                      <div className="flex items-start gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-[#eaf2f8] flex items-center justify-center text-[#005b96] shrink-0">
-                          <FileText className="w-5 h-5" />
+                  {EMPLOYMENT_FORMS.map((formItem) => {
+                    const shared = sharedBySlot[formItem.id];
+                    return (
+                      <div
+                        key={formItem.id}
+                        className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-5 shadow-sm flex flex-col gap-4"
+                      >
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-[#eaf2f8] flex items-center justify-center text-[#005b96] shrink-0">
+                            <FileText className="w-5 h-5" />
+                          </div>
+                          <div className="min-w-0">
+                            <h2 className="text-sm sm:text-base font-bold text-[#011f4b] leading-snug break-words">
+                              {formItem.title}
+                            </h2>
+                            <p className="text-xs text-[#6497b1] mt-0.5 leading-relaxed">
+                              {formItem.desc}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <h2 className="text-sm sm:text-base font-bold text-[#011f4b] leading-snug break-words">
-                            {formItem.title}
-                          </h2>
-                          <p className="text-xs text-[#6497b1] mt-0.5 leading-relaxed">
-                            {formItem.desc}
-                          </p>
-                        </div>
-                      </div>
 
-                      <div className="flex flex-col min-[420px]:flex-row gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            alert(`Downloading ${formItem.title} template (PDF)...`);
-                          }}
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2.5 text-xs font-semibold whitespace-nowrap border border-[#b3cde0] text-[#005b96] hover:bg-[#eaf2f8] rounded-xl transition-colors min-h-11"
-                        >
-                          <Download className="w-3.5 h-3.5 shrink-0" />
-                          Download Form
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            setUploadTask({
-                              id: formItem.id,
-                              title: formItem.title,
-                              description: formItem.desc,
-                              category: 'form',
-                              status: 'not_started',
-                              required: true,
-                              display_order: 0,
-                            })
-                          }
-                          className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2.5 text-xs font-semibold whitespace-nowrap bg-[#011f4b] hover:bg-[#03396c] text-white rounded-xl transition-colors shadow-sm min-h-11"
-                        >
-                          <UploadCloud className="w-3.5 h-3.5 shrink-0" />
-                          Upload Completed Form
-                        </button>
+                        <div className="flex flex-col min-[420px]:flex-row gap-2">
+                          {shared ? (
+                            <a
+                              href={shared.file_path}
+                              target="_blank"
+                              rel="noreferrer"
+                              title={`Download ${shared.file_name}`}
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2.5 text-xs font-semibold whitespace-nowrap border border-[#b3cde0] text-[#005b96] hover:bg-[#eaf2f8] rounded-xl transition-colors min-h-11"
+                            >
+                              <Download className="w-3.5 h-3.5 shrink-0" />
+                              Download Form
+                            </a>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled
+                              title="No file uploaded by HR yet"
+                              className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2.5 text-xs font-semibold whitespace-nowrap border border-[#e2e8f0] bg-slate-100 text-slate-400 rounded-xl cursor-not-allowed min-h-11"
+                            >
+                              <Download className="w-3.5 h-3.5 shrink-0" />
+                              Download Form
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setUploadTask({
+                                id: formItem.id,
+                                title: formItem.title,
+                                required: true,
+                              })
+                            }
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2.5 text-xs font-semibold whitespace-nowrap bg-[#011f4b] hover:bg-[#03396c] text-white rounded-xl transition-colors shadow-sm min-h-11"
+                          >
+                            <UploadCloud className="w-3.5 h-3.5 shrink-0" />
+                            Upload Completed Form
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <p className="text-[11px] sm:text-xs text-[#6497b1] leading-relaxed bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-4 py-3">
@@ -1237,7 +1513,7 @@ export default function EmployeeDashboardPage() {
                         onDrop={(e) => {
                           e.preventDefault();
                           setIsDraggingPhoto(false);
-                          handlePhotoFiles(e.dataTransfer.files);
+                          void handlePhotoFiles(e.dataTransfer.files);
                         }}
                         className={`cursor-pointer flex flex-col items-center justify-center text-center gap-1.5 rounded-2xl border-2 border-dashed px-4 py-8 sm:py-10 transition-colors min-h-11 ${
                           isDraggingPhoto
@@ -1258,7 +1534,7 @@ export default function EmployeeDashboardPage() {
                           multiple
                           className="hidden"
                           onChange={(e) => {
-                            handlePhotoFiles(e.target.files);
+                            void handlePhotoFiles(e.target.files);
                             e.target.value = '';
                           }}
                         />
@@ -1291,24 +1567,13 @@ export default function EmployeeDashboardPage() {
                               </div>
                               <a
                                 href={photo.previewUrl}
-                                download={photo.name}
+                                target="_blank"
+                                rel="noreferrer"
                                 aria-label={`Download ${photo.name}`}
                                 className="p-2 rounded-lg text-[#005b96] hover:bg-emerald-100 transition-colors shrink-0"
                               >
                                 <Download className="w-4 h-4" />
                               </a>
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setUploadedPhotos((prev) =>
-                                    prev.filter((p) => p.id !== photo.id)
-                                  )
-                                }
-                                aria-label={`Delete ${photo.name}`}
-                                className="p-2 rounded-lg text-rose-600 hover:bg-rose-100 transition-colors shrink-0"
-                              >
-                                <X className="w-4 h-4" />
-                              </button>
                             </div>
                           ))}
                         </div>
@@ -1334,14 +1599,28 @@ export default function EmployeeDashboardPage() {
                   <p className="text-xs sm:text-sm text-[#6497b1] leading-relaxed">
                     Download and print the medical referral form below. Bring this form with you to the clinic.
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => alert('Downloading official Medical Referral Form (PDF)...')}
-                    className="inline-flex items-center justify-center gap-1.5 bg-[#011f4b] hover:bg-[#03396c] text-white text-xs font-semibold px-4 py-3 sm:py-2.5 rounded-xl transition-colors shadow-sm min-h-11"
-                  >
-                    <Download className="w-3.5 h-3.5 shrink-0" />
-                    Download Referral Form
-                  </button>
+                  {sharedBySlot['medical-referral'] ? (
+                    <a
+                      href={sharedBySlot['medical-referral'].file_path}
+                      target="_blank"
+                      rel="noreferrer"
+                      title={`Download ${sharedBySlot['medical-referral'].file_name}`}
+                      className="inline-flex items-center justify-center gap-1.5 bg-[#011f4b] hover:bg-[#03396c] text-white text-xs font-semibold px-4 py-3 sm:py-2.5 rounded-xl transition-colors shadow-sm min-h-11"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0" />
+                      Download Referral Form
+                    </a>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      title="No file uploaded by HR yet"
+                      className="inline-flex items-center justify-center gap-1.5 bg-slate-200 text-slate-400 text-xs font-semibold px-4 py-3 sm:py-2.5 rounded-xl cursor-not-allowed min-h-11"
+                    >
+                      <Download className="w-3.5 h-3.5 shrink-0" />
+                      Download Referral Form
+                    </button>
+                  )}
                 </div>
 
                 {/* Accredited Clinic */}
@@ -1353,18 +1632,33 @@ export default function EmployeeDashboardPage() {
                     <div className="flex items-start gap-2">
                       <MapPin className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">Clinica Manila</span> at SM Center Pasig, E. Rodriguez Jr. Ave corner Dona Julia Vargas Ave., Frontera Verde, Ortigas Center, Pasig, 1604 Metro Manila.
+                        <span className="font-bold text-[#011f4b]">{packet.medical?.clinic_name || 'Accredited clinic'}</span>
+                        {packet.medical?.clinic_address ? ` at ${packet.medical.clinic_address}` : '.'}
                       </p>
                     </div>
-                    <div className="flex items-start gap-2">
-                      <Phone className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
-                      <p className="text-[#03396c]">(02) 8696 7055</p>
-                    </div>
-                    <div className="flex items-start gap-2">
-                      <Clock className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
-                      <p className="text-[#03396c]">Monday to Saturday: 8:00 AM to 6:00 PM.</p>
-                    </div>
+                    {packet.medical?.clinic_phone && (
+                      <div className="flex items-start gap-2">
+                        <Phone className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
+                        <p className="text-[#03396c]">{packet.medical.clinic_phone}</p>
+                      </div>
+                    )}
+                    {packet.medical?.clinic_schedule && (
+                      <div className="flex items-start gap-2">
+                        <Clock className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
+                        <p className="text-[#03396c]">{packet.medical.clinic_schedule}</p>
+                      </div>
+                    )}
                   </div>
+                  {packet.medical?.expense_notes && (
+                    <p className="text-xs sm:text-sm text-[#03396c] leading-relaxed bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-4 py-3">
+                      {packet.medical.expense_notes}
+                    </p>
+                  )}
+                  {packet.medical?.feedback && (
+                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
+                      <strong>HR feedback:</strong> {packet.medical.feedback}
+                    </div>
+                  )}
                 </div>
 
                 {/* Instructions */}
@@ -1398,26 +1692,7 @@ export default function EmployeeDashboardPage() {
                 {/* Reviewed */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setMedicalReviewed(true);
-                    updateDB((prev) =>
-                      logAudit(
-                        {
-                          ...prev,
-                          tasks: prev.tasks.map((t) =>
-                            t.id === 'task-med-1' && t.status !== 'approved'
-                              ? { ...t, status: 'submitted', submitted_at: 'Just now' }
-                              : t
-                          ),
-                        },
-                        employee.full_name,
-                        'employee',
-                        'MEDICAL_REVIEWED',
-                        'Medical Requirements',
-                        'Employee marked the medical section as reviewed.'
-                      )
-                    );
-                  }}
+                  onClick={() => void handleMedicalReviewed()}
                   disabled={medicalReviewed}
                   className={`w-full inline-flex items-center justify-center gap-2 text-white text-xs sm:text-sm font-bold px-4 py-3.5 rounded-xl transition-colors shadow-sm min-h-11 ${
                     medicalReviewed ? 'bg-emerald-600 cursor-default' : 'bg-[#011f4b] hover:bg-[#03396c]'
@@ -1454,33 +1729,9 @@ export default function EmployeeDashboardPage() {
                     </div>
                     <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Dress Code</h2>
                   </div>
-                  <p className="text-xs sm:text-sm font-semibold text-[#03396c]">Business Casual</p>
-                  <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
-                    <div className="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200/70">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-700 mb-2">
-                        <Check className="w-3.5 h-3.5 text-emerald-600" />
-                        Acceptable
-                      </div>
-                      <ul className="text-xs text-[#03396c] space-y-1.5 list-disc list-inside leading-relaxed">
-                        <li>Collared shirts / blouses</li>
-                        <li>Dress pants / slacks</li>
-                        <li>Closed-toe shoes</li>
-                        <li>Modest dresses / skirts (knee-length)</li>
-                      </ul>
-                    </div>
-                    <div className="p-3.5 bg-rose-50/60 rounded-xl border border-rose-200/70">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-rose-700 mb-2">
-                        <X className="w-3.5 h-3.5 text-rose-600" />
-                        Not Allowed
-                      </div>
-                      <ul className="text-xs text-[#03396c] space-y-1.5 list-disc list-inside leading-relaxed">
-                        <li>T-shirts / tank tops</li>
-                        <li>Shorts / mini skirts</li>
-                        <li>Flip-flops / sandals</li>
-                        <li>Overly casual wear</li>
-                      </ul>
-                    </div>
-                  </div>
+                  <p className="text-xs sm:text-sm font-semibold text-[#03396c]">
+                    {packet.firstDay?.dress_code || 'Smart-Casual'}
+                  </p>
                 </div>
 
                 {/* Schedule */}
@@ -1495,48 +1746,55 @@ export default function EmployeeDashboardPage() {
                     <div className="flex items-start gap-2">
                       <Clock className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">Expected Arrival Time:</span> 9:00 AM.
+                        <span className="font-bold text-[#011f4b]">Expected Arrival Time:</span>{' '}
+                        {packet.firstDay?.arrival_time || '8:00 AM'}.
                       </p>
                     </div>
                     <div className="flex items-start gap-2">
                       <MapPin className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">Office Location:</span> Units 3301-3302, 33rd Floor Corporate Finance Plaza Condominium, Ruby Road, Ortigas Center, Barangay San Antonio, Pasig City.
+                        <span className="font-bold text-[#011f4b]">Office Location:</span>{' '}
+                        {packet.firstDay
+                          ? `${packet.firstDay.office_name}, ${packet.firstDay.office_address}`
+                          : 'Corporate Headquarters.'}
                       </p>
                     </div>
                     <div className="flex items-start gap-2">
                       <Building2 className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">Report To:</span> HR Department - Reception Area.
+                        <span className="font-bold text-[#011f4b]">Report To:</span>{' '}
+                        {packet.firstDay?.reporting_to || 'HR Reception'}.
                       </p>
                     </div>
+                    {packet.firstDay?.map_instructions && (
+                      <p className="text-[#03396c] text-xs sm:text-sm">{packet.firstDay.map_instructions}</p>
+                    )}
                   </div>
                 </div>
 
                 {/* Things To Bring */}
-                <div className="space-y-3">
-                  <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Things To Bring</h2>
-                  <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
-                    {BRING_ITEMS.map((item) => (
-                      <div
-                        key={item.title}
-                        className="bg-white rounded-2xl border border-[#e2e8f0] p-4 shadow-sm flex items-start gap-2.5"
-                      >
-                        <span className="w-8 h-8 rounded-lg bg-[#eaf2f8] flex items-center justify-center shrink-0">
-                          <Check className="w-4 h-4 text-emerald-600" />
-                        </span>
-                        <span className="min-w-0">
-                          <span className="text-xs sm:text-sm font-bold text-[#011f4b] block leading-snug">
-                            {item.title}
+                {bringItems.length > 0 && (
+                  <div className="space-y-3">
+                    <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Things To Bring</h2>
+                    <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
+                      {bringItems.map((item) => (
+                        <div
+                          key={item}
+                          className="bg-white rounded-2xl border border-[#e2e8f0] p-4 shadow-sm flex items-start gap-2.5"
+                        >
+                          <span className="w-8 h-8 rounded-lg bg-[#eaf2f8] flex items-center justify-center shrink-0">
+                            <Check className="w-4 h-4 text-emerald-600" />
                           </span>
-                          <span className="text-[11px] sm:text-xs text-[#6497b1] block mt-0.5 leading-relaxed">
-                            {item.desc}
+                          <span className="min-w-0">
+                            <span className="text-xs sm:text-sm font-bold text-[#011f4b] block leading-snug">
+                              {item}
+                            </span>
                           </span>
-                        </span>
-                      </div>
-                    ))}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
+                )}
 
                 {/* First Day Orientation Checklist */}
                 <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-4">
@@ -1617,35 +1875,44 @@ export default function EmployeeDashboardPage() {
                 {/* Company Introduction */}
                 <div className="space-y-3">
                   <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Company Introduction</h2>
-                  <button
-                    type="button"
-                    onClick={() => alert('Company introduction video coming soon.')}
-                    aria-label="Play company introduction video"
-                    className="w-full bg-[#011f4b] rounded-2xl overflow-hidden shadow-sm hover:bg-[#03396c] transition-colors"
-                  >
-                    <span className="flex flex-col items-center justify-center gap-2 px-6 py-12 sm:py-16 min-h-64 sm:min-h-100 text-center">
-                      <span className="w-14 h-14 rounded-full bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center">
-                        <Play className="w-6 h-6 text-white ml-0.5" />
+                  {packet.firstDay?.intro_video_url ? (
+                    <a
+                      href={packet.firstDay.intro_video_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Play company introduction video"
+                      className="block w-full bg-[#011f4b] rounded-2xl overflow-hidden shadow-sm hover:bg-[#03396c] transition-colors"
+                    >
+                      <span className="flex flex-col items-center justify-center gap-2 px-6 py-12 sm:py-16 min-h-64 sm:min-h-100 text-center">
+                        <span className="w-14 h-14 rounded-full bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center">
+                          <Play className="w-6 h-6 text-white ml-0.5" />
+                        </span>
+                        <span className="text-sm sm:text-base font-bold text-white">
+                          Company Introduction Video
+                        </span>
+                        <span className="text-xs text-[#b3cde0]">
+                          Learn about our mission, vision, and values.
+                        </span>
                       </span>
-                      <span className="text-sm sm:text-base font-bold text-white">
-                        Company Introduction Video
+                    </a>
+                  ) : (
+                    <div className="w-full bg-[#011f4b] rounded-2xl overflow-hidden shadow-sm">
+                      <span className="flex flex-col items-center justify-center gap-2 px-6 py-12 sm:py-16 text-center">
+                        <span className="text-sm sm:text-base font-bold text-white">
+                          Company Introduction Video
+                        </span>
+                        <span className="text-xs text-[#b3cde0]">
+                          HR has not shared the video link yet.
+                        </span>
                       </span>
-                      <span className="text-xs text-[#b3cde0]">
-                        Learn about our mission, vision, and values.
-                      </span>
-                    </span>
-                  </button>
+                    </div>
+                  )}
                   <p className="text-[11px] sm:text-xs text-[#6497b1] leading-relaxed text-center">
                     Watch this video to learn more about our company culture, history, and what makes us unique.
                   </p>
                   <button
                     type="button"
-                    onClick={() => {
-                      setFirstDayReady(true);
-                      updateDB((prev) =>
-                        logAudit(prev, employee.full_name, 'employee', 'FIRSTDAY_READY', 'First Day Preparation', 'Employee acknowledged readiness for the first day.')
-                      );
-                    }}
+                    onClick={() => void handleFirstDayReady()}
                     disabled={firstDayReady}
                     className={`w-full inline-flex items-center justify-center gap-2 text-white text-xs sm:text-sm font-bold px-4 py-3.5 rounded-xl transition-colors shadow-sm min-h-11 ${
                       firstDayReady
@@ -1701,122 +1968,41 @@ export default function EmployeeDashboardPage() {
                   </p>
                 </div>
 
-                {/* What We Collect */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-[#eaf2f8] flex items-center justify-center text-[#005b96] shrink-0">
-                      <FileText className="w-4.5 h-4.5" />
-                    </div>
+                {/* Current notice from HR */}
+                {packet.privacyPolicy && (
+                  <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
                     <h2 className="text-base sm:text-lg font-bold text-[#011f4b] leading-snug">
-                      What Personal Information We Collect
+                      {packet.privacyPolicy.title}
                     </h2>
+                    <p className="text-[11px] text-[#6497b1] tabular-nums">
+                      Version {packet.privacyPolicy.version} · Effective {packet.privacyPolicy.effective_date}
+                    </p>
+                    <p className="text-xs sm:text-sm text-[#03396c] leading-relaxed">
+                      {packet.privacyPolicy.content}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setIsPrivacyModalOpen(true)}
+                      className="text-xs font-bold text-[#005b96] hover:underline pt-1"
+                    >
+                      View Full Policy Text
+                    </button>
                   </div>
-                  <ul className="text-xs sm:text-sm text-[#03396c] space-y-2 list-disc list-inside leading-relaxed">
-                    <li>Basic identification information (name, address, contact details)</li>
-                    <li>Government-issued IDs and numbers (SSS, PhilHealth, PAG-IBIG, TIN)</li>
-                    <li>Educational background and employment history</li>
-                    <li>Medical records for pre-employment requirements</li>
-                    <li>Payroll and banking information</li>
-                    <li>Performance evaluations and work-related documents</li>
-                  </ul>
-                </div>
-
-                {/* How We Use */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-[#eaf2f8] flex items-center justify-center text-[#005b96] shrink-0">
-                      <Lock className="w-4.5 h-4.5" />
-                    </div>
-                    <h2 className="text-base sm:text-lg font-bold text-[#011f4b] leading-snug">
-                      How We Use Your Information
-                    </h2>
-                  </div>
-                  <ul className="text-xs sm:text-sm text-[#03396c] space-y-2 list-disc list-inside leading-relaxed">
-                    <li>Employee verification and onboarding processes</li>
-                    <li>Payroll processing and benefits administration</li>
-                    <li>Compliance with legal and regulatory requirements</li>
-                    <li>Performance management and career development</li>
-                    <li>Internal communications and company operations</li>
-                    <li>Health and safety management</li>
-                  </ul>
-                </div>
-
-                {/* Rights */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-9 h-9 rounded-xl bg-[#eaf2f8] flex items-center justify-center text-[#005b96] shrink-0">
-                      <Eye className="w-4.5 h-4.5" />
-                    </div>
-                    <h2 className="text-base sm:text-lg font-bold text-[#011f4b] leading-snug">
-                      Your Data Privacy Rights
-                    </h2>
-                  </div>
-                  <ul className="text-xs sm:text-sm text-[#03396c] space-y-2.5 leading-relaxed">
-                    <li><strong className="font-bold text-[#011f4b]">Be Informed:</strong> Know how your data is being collected and used</li>
-                    <li><strong className="font-bold text-[#011f4b]">Access:</strong> Request access to your personal information</li>
-                    <li><strong className="font-bold text-[#011f4b]">Correct:</strong> Request correction of inaccurate or incomplete data</li>
-                    <li><strong className="font-bold text-[#011f4b]">Erase or Block:</strong> Request deletion or blocking of your data under certain conditions</li>
-                    <li><strong className="font-bold text-[#011f4b]">Object:</strong> Object to processing of your data for legitimate reasons</li>
-                    <li><strong className="font-bold text-[#011f4b]">Damages:</strong> Be indemnified for damages due to inaccurate, incomplete, or unauthorized processing</li>
-                  </ul>
-                </div>
-
-                {/* HR Internal Policy */}
-                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
-                  <h2 className="text-base sm:text-lg font-bold text-[#011f4b] leading-snug">
-                    HR Internal Data Handling Policy
-                  </h2>
-                  <div className="bg-[#f1f5f9] rounded-xl border border-[#e2e8f0] p-4 space-y-4">
-                    <div>
-                      <h3 className="text-xs sm:text-sm font-bold text-[#011f4b] mb-1.5">Security Measures</h3>
-                      <ul className="text-xs sm:text-sm text-[#03396c] space-y-1.5 list-disc list-inside leading-relaxed">
-                        <li>Secure encrypted database storage</li>
-                        <li>Restriction to authorized HR personnel only</li>
-                        <li>Regular security audits and compliance reviews</li>
-                        <li>Legal data retention compliance</li>
-                      </ul>
-                    </div>
-                    <div className="pt-3 border-t border-[#e2e8f0]">
-                      <h3 className="text-xs sm:text-sm font-bold text-[#011f4b] mb-1.5">Data Sharing</h3>
-                      <ul className="text-xs sm:text-sm text-[#03396c] space-y-1.5 list-disc list-inside leading-relaxed">
-                        <li>Information is not shared without your consent</li>
-                        <li>Disclosure only when required by law or necessary for employment</li>
-                        <li>Binding confidentiality agreements for service providers (for example, payroll processors)</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
+                )}
 
                 {/* Contact */}
                 <div className="bg-[#eaf2f8] rounded-2xl border border-[#b3cde0] p-4 sm:p-6 space-y-2">
                   <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Questions or Concerns?</h2>
                   <p className="text-xs sm:text-sm text-[#03396c] leading-relaxed">
-                    If you have any questions about our data privacy practices or wish to exercise your data privacy rights, please contact:
+                    If you have any questions about our data privacy practices or wish to exercise your data privacy rights, please contact HR through the Need Help section.
                   </p>
-                  <div className="text-xs sm:text-sm text-[#03396c] leading-relaxed">
-                    <p className="font-bold text-[#011f4b]">Data Protection Officer</p>
-                    <p>Email: dpo@company.com</p>
-                    <p>Phone: (02) 8123-4567</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => setIsPrivacyModalOpen(true)}
-                    className="text-xs font-bold text-[#005b96] hover:underline pt-1"
-                  >
-                    View Full Policy Text
-                  </button>
                 </div>
 
                 {/* Acknowledge */}
                 <button
                   type="button"
-                  onClick={() => {
-                    setPrivacyAck(true);
-                    updateDB((prev) =>
-                      logAudit(prev, employee.full_name, 'employee', 'PRIVACY_ACK', 'Data Privacy Policy', 'Employee acknowledged policy version PKI-DP-2026-V3.')
-                    );
-                  }}
-                  disabled={privacyAck}
+                  onClick={() => void handlePrivacyAck()}
+                  disabled={privacyAck || !packet.privacyPolicy}
                   className={`w-full inline-flex items-center justify-center gap-2 text-white text-xs sm:text-sm font-bold px-4 py-3.5 rounded-xl transition-colors shadow-sm min-h-11 ${
                     privacyAck ? 'bg-emerald-600 cursor-default' : 'bg-[#011f4b] hover:bg-[#03396c]'
                   }`}
@@ -1846,7 +2032,7 @@ export default function EmployeeDashboardPage() {
                   </div>
                   <div className="min-w-0">
                     <h2 className="text-sm font-bold text-[#011f4b] truncate whitespace-nowrap">
-                      {activeThread ? hrName(activeThread.hr_id) : 'HR Support'}
+                      HR Support
                     </h2>
                     <p className="text-[11px] text-emerald-600 font-semibold">Online, replies soon</p>
                   </div>
@@ -1887,21 +2073,17 @@ export default function EmployeeDashboardPage() {
                     ) : (
                       <div key={msg.id} className="flex justify-start items-end gap-1.5">
                         <span
-                          title={activeThread ? hrName(activeThread.hr_id) : 'HR Support'}
+                          title="HR Support"
                           className="w-7 h-7 rounded-full bg-[#005b96] text-white text-[9px] font-bold flex items-center justify-center shrink-0"
                         >
-                          {(activeThread ? hrName(activeThread.hr_id) : 'HR Support')
-                            .split(' ')
-                            .map((n) => n[0])
-                            .slice(0, 2)
-                            .join('')}
+                          HS
                         </span>
                         <div className="max-w-[80%] min-[420px]:max-w-[70%]">
                           <div className="bg-[#f1f5f9] text-[#03396c] text-xs sm:text-sm leading-relaxed rounded-2xl rounded-bl-md px-3.5 py-2.5 border border-[#e2e8f0] break-words">
                             {msg.body}
                           </div>
                           <p className="text-[10px] text-[#6497b1] mt-1 tabular-nums">
-                            {activeThread ? hrName(activeThread.hr_id) : 'HR Support'}, {msg.created_at}
+                            HR Support, {msg.created_at}
                           </p>
                         </div>
                       </div>
@@ -1912,7 +2094,9 @@ export default function EmployeeDashboardPage() {
 
                 {/* Composer */}
                 <form
-                  onSubmit={handleSendChat}
+                  onSubmit={(e) => {
+                    void handleSendChat(e);
+                  }}
                   className="flex items-center gap-2 px-3 sm:px-4 py-3 border-t border-[#e2e8f0] bg-[#f8fafc]"
                 >
                   <input
@@ -2019,8 +2203,10 @@ export default function EmployeeDashboardPage() {
                 onClick={() => {
                   setUploadTask(null);
                   setUploadFiles([]);
+                  setUploadError('');
                 }}
                 className="text-[#6497b1] hover:text-[#011f4b]"
+                aria-label="Close upload"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2031,6 +2217,12 @@ export default function EmployeeDashboardPage() {
               encrypted and accessible only by HR officers.
             </p>
 
+            {uploadError && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                {uploadError}
+              </div>
+            )}
+
             {uploadSuccess ? (
               <div className="p-6 bg-emerald-50 border border-emerald-200 rounded-xl text-center space-y-2">
                 <CheckCircle2 className="w-10 h-10 text-emerald-600 mx-auto" />
@@ -2040,7 +2232,12 @@ export default function EmployeeDashboardPage() {
                 </div>
               </div>
             ) : (
-              <form onSubmit={handleFileUpload} className="space-y-4">
+              <form
+                onSubmit={(e) => {
+                  void handleFileUpload(e);
+                }}
+                className="space-y-4"
+              >
                 <div className="border-2 border-dashed border-[#b3cde0] hover:border-[#005b96] rounded-xl p-6 text-center bg-[#f8fafc] cursor-pointer">
                   <input
                     type="file"
@@ -2087,6 +2284,7 @@ export default function EmployeeDashboardPage() {
                     onClick={() => {
                       setUploadTask(null);
                       setUploadFiles([]);
+                      setUploadError('');
                     }}
                     className="px-4 py-2 text-xs font-semibold text-[#6497b1] hover:text-[#011f4b]"
                   >
@@ -2094,10 +2292,10 @@ export default function EmployeeDashboardPage() {
                   </button>
                   <button
                     type="submit"
-                    disabled={uploadFiles.length === 0}
+                    disabled={uploadFiles.length === 0 || uploading}
                     className="bg-[#005b96] hover:bg-[#03396c] text-white text-xs font-semibold px-5 py-2 rounded-xl disabled:opacity-50 transition-colors"
                   >
-                    Submit Document{uploadFiles.length > 1 ? 's' : ''}
+                    {uploading ? 'Uploading...' : `Submit Document${uploadFiles.length > 1 ? 's' : ''}`}
                   </button>
                 </div>
               </form>
@@ -2120,6 +2318,7 @@ export default function EmployeeDashboardPage() {
               <button
                 onClick={() => setIsFormModalOpen(false)}
                 className="text-[#6497b1] hover:text-[#011f4b]"
+                aria-label="Close form"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -2127,9 +2326,7 @@ export default function EmployeeDashboardPage() {
 
             <form
               onSubmit={(e) => {
-                e.preventDefault();
-                alert('Form details successfully saved and submitted to HR.');
-                setIsFormModalOpen(false);
+                void handlePdsSubmit(e);
               }}
               className="space-y-4 text-xs"
             >
@@ -2228,18 +2425,19 @@ export default function EmployeeDashboardPage() {
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-[#e2e8f0] max-h-[85vh] flex flex-col">
             <div className="flex items-center justify-between pb-3 border-b border-[#e2e8f0]">
               <h3 className="text-base font-bold text-[#011f4b]">
-                Philkoei Employee Data Privacy Notice
+                {packet.privacyPolicy?.title || 'Employee Data Privacy Notice'}
               </h3>
               <button
                 onClick={() => setIsPrivacyModalOpen(false)}
                 className="text-[#6497b1] hover:text-[#011f4b]"
+                aria-label="Close policy"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="my-4 overflow-y-auto pr-2 text-xs text-[#03396c] leading-relaxed whitespace-pre-line font-mono bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
-              {INITIAL_PRIVACY_TEXT}
+            <div className="my-4 overflow-y-auto pr-2 text-xs text-[#03396c] leading-relaxed whitespace-pre-line bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
+              {packet.privacyPolicy?.content || 'No privacy notice has been published yet.'}
             </div>
 
             <div className="flex justify-end pt-2 border-t border-[#e2e8f0]">

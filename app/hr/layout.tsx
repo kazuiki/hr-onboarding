@@ -1,13 +1,11 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   Building2,
   LayoutDashboard,
-  Users,
-  FileSearch,
   ClipboardList,
   History,
   LogOut,
@@ -19,16 +17,28 @@ import {
 
 const NAV_ITEMS = [
   { href: '/hr', label: 'Overview', icon: LayoutDashboard },
-  { href: '/hr/employees', label: 'Employees', icon: Users },
-  { href: '/hr/reviews', label: 'Review Queue', icon: FileSearch },
-  { href: '/hr/messages', label: 'Messages', icon: MessageCircle },
   { href: '/hr/templates', label: 'Templates', icon: ClipboardList },
+  { href: '/hr/messages', label: 'Messages', icon: MessageCircle },
   { href: '/hr/audit-log', label: 'Audit Log', icon: History },
 ];
 
 export default function HRLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [hrName, setHrName] = useState('HR');
+  const [hrRole, setHrRole] = useState('');
+
+  useEffect(() => {
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.full_name === 'string') setHrName(data.full_name);
+        if (data && typeof data.role === 'string') {
+          setHrRole(data.role === 'hr_manager' ? 'HR Manager' : 'HR Assistant');
+        }
+      })
+      .catch(() => undefined);
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex">
@@ -70,11 +80,17 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
         <div className="p-4 border-t border-[#03396c]">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-8 h-8 rounded-full bg-[#03396c] flex items-center justify-center text-xs font-bold text-[#b3cde0]">
-              EG
+              {hrName
+                .split(' ')
+                .filter(Boolean)
+                .slice(0, 2)
+                .map((n) => n[0])
+                .join('')
+                .toUpperCase()}
             </div>
             <div>
-              <div className="text-xs font-bold text-white">Elena Gomez</div>
-              <div className="text-[10px] text-[#b3cde0]">HR Director</div>
+              <div className="text-xs font-bold text-white">{hrName}</div>
+              <div className="text-[10px] text-[#b3cde0]">{hrRole || 'HR Portal'}</div>
             </div>
           </div>
           <Link
@@ -155,7 +171,13 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
             </button>
             <div className="flex items-center gap-2 lg:hidden">
               <div className="w-7 h-7 rounded-full bg-[#011f4b] flex items-center justify-center text-[10px] font-bold text-white">
-                EG
+                {hrName
+                  .split(' ')
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map((n) => n[0])
+                  .join('')
+                  .toUpperCase()}
               </div>
             </div>
           </div>

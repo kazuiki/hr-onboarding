@@ -1,89 +1,91 @@
 "use client";
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Plus, ClipboardList, Check, X } from 'lucide-react';
+import { useMe } from '@/lib/use-me';
+
+interface TemplateTask {
+  slug: string;
+  title: string;
+  category: string;
+  required: number;
+  display_order: number;
+}
 
 interface Template {
   id: string;
   name: string;
   department: string;
-  description: string;
-  tasks: string[];
-  is_active: boolean;
+  description: string | null;
+  is_active: number;
+  created_by_name: string | null;
+  tasks: TemplateTask[];
 }
 
-const DEFAULT_TEMPLATES: Template[] = [
-  {
-    id: 'tpl-eng',
-    name: 'Standard Engineering Onboarding',
-    department: 'Civil & Environmental Engineering',
-    description: 'Forms, government IDs, PRC license, medical exam, first-day guide, and privacy consent.',
-    tasks: [
-      'Personal Data Sheet',
-      'BIR / Tax Forms',
-      'Payroll Direct Deposit',
-      'Company ID Photo',
-      'SSS / PhilHealth / Pag-IBIG',
-      'NBI Clearance',
-      'PRC License & Transcript',
-      'Pre-Employment Medical Exam',
-      'First-Day Orientation',
-      'Data Privacy Acknowledgement',
-    ],
-    is_active: true,
-  },
-  {
-    id: 'tpl-fin',
-    name: 'Finance & Project Controls Packet',
-    department: 'Finance & Project Controls',
-    description: 'Core employment packet plus confidentiality and cost-control policy acknowledgements.',
-    tasks: [
-      'Personal Data Sheet',
-      'BIR / Tax Forms',
-      'Payroll Direct Deposit',
-      'Company ID Photo',
-      'Government Benefits IDs',
-      'NBI Clearance',
-      'Medical Examination',
-      'Finance Confidentiality Addendum',
-      'First-Day Orientation',
-      'Data Privacy Acknowledgement',
-    ],
-    is_active: true,
-  },
-];
+const DEFAULT_TASK_TEXT =
+  'Personal Data Sheet\nCompany ID Photo\nNBI Clearance\nMedical Examination\nData Privacy Acknowledgement';
 
 export default function HRTemplatesPage() {
-  const [templates, setTemplates] = useState<Template[]>(DEFAULT_TEMPLATES);
+  const { me, loading: meLoading } = useMe({ allow: ['hr_manager', 'hr_assistant'] });
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [saving, setSaving] = useState(false);
   const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({
-    name: '',
-    department: '',
-    description: '',
-    tasks: 'Personal Data Sheet\nCompany ID Photo\nNBI Clearance\nMedical Examination\nData Privacy Acknowledgement',
-  });
+  const [form, setForm] = useState({ name: '', department: '', description: '', tasks: DEFAULT_TASK_TEXT });
 
-  const handleCreate = (e: React.FormEvent) => {
-    e.preventDefault();
-    setTemplates((prev) => [
-      {
-        id: `tpl-${Date.now()}`,
-        name: form.name,
-        department: form.department,
-        description: form.description,
-        tasks: form.tasks.split('\n').map((t) => t.trim()).filter(Boolean),
-        is_active: true,
-      },
-      ...prev,
-    ]);
-    setOpen(false);
-    setForm({
-      name: '',
-      department: '',
-      description: '',
-      tasks: 'Personal Data Sheet\nCompany ID Photo\nNBI Clearance\nMedical Examination\nData Privacy Acknowledgement',
-    });
+  const loadTemplates = async () => {
+    try {
+      const res = await fetch('/api/templates', { cache: 'no-store' });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setTemplates(data.templates ?? []);
+      setLoadError('');
+    } catch {
+      setLoadError('Could not load templates. Check the database connection and refresh.');
+    } finally {
+      setLoading(false);
+    }
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (me) void loadTemplates();
+  }, [me]);
+
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSaving(true);
+    setSaveError('');
+    try {
+      const res = await fetch('/api/templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setSaveError(data.error || 'Could not save the template.');
+        return;
+      }
+      setOpen(false);
+      setForm({ name: '', department: '', description: '', tasks: DEFAULT_TASK_TEXT });
+      await loadTemplates();
+    } catch {
+      setSaveError('Could not reach the server. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (meLoading || !me) {
+    return (
+      <div className="flex items-center justify-center py-24">
+        <div className="w-8 h-8 border-2 border-[#b3cde0] border-t-[#005b96] rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -103,6 +105,10 @@ export default function HRTemplatesPage() {
         </button>
       </div>
 
+      {loadError && (
+        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-xs text-red-700">{loadError}</div>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {templates.map((tpl) => (
           <div key={tpl.id} className="bg-white rounded-2xl border border-[#e2e8f0] p-5">
@@ -113,36 +119,46 @@ export default function HRTemplatesPage() {
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-[#011f4b]">{tpl.name}</h3>
-                  <p className="text-[11px] text-[#6497b1]">{tpl.department}</p>
+                  <p className="text-[11px] text-[#6497b1]">{tpl.department || 'All departments'}</p>
                 </div>
               </div>
               <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Active
+                {tpl.tasks.length} items
               </span>
             </div>
-            <p className="text-xs text-[#03396c] mb-3">{tpl.description}</p>
+            {tpl.description && <p className="text-xs text-[#03396c] mb-3">{tpl.description}</p>}
             <ul className="space-y-1.5">
               {tpl.tasks.map((task) => (
-                <li key={task} className="flex items-center gap-2 text-xs text-[#03396c]">
+                <li key={task.slug} className="flex items-center gap-2 text-xs text-[#03396c]">
                   <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-                  {task}
+                  {task.title}
                 </li>
               ))}
             </ul>
           </div>
         ))}
       </div>
+      {!loading && !loadError && templates.length === 0 && (
+        <div className="p-10 text-center text-sm text-[#6497b1] bg-white rounded-2xl border border-[#e2e8f0]">
+          No templates yet. Create the first one to speed up future invites.
+        </div>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-base font-bold text-[#011f4b]">Create Template</h3>
-              <button onClick={() => setOpen(false)} className="text-[#6497b1] hover:text-[#011f4b]">
+              <button onClick={() => setOpen(false)} className="text-[#6497b1] hover:text-[#011f4b]" aria-label="Close">
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <form onSubmit={handleCreate} className="space-y-3 text-sm">
+            {saveError && (
+              <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">
+                {saveError}
+              </div>
+            )}
+            <form onSubmit={(e) => void handleCreate(e)} className="space-y-3 text-sm">
               <div>
                 <label className="block text-xs font-bold text-[#03396c] mb-1">Template Name</label>
                 <input
@@ -183,11 +199,19 @@ export default function HRTemplatesPage() {
                 />
               </div>
               <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setOpen(false)} className="text-xs font-semibold text-[#6497b1] px-4 py-2">
+                <button
+                  type="button"
+                  onClick={() => setOpen(false)}
+                  className="text-xs font-semibold text-[#6497b1] px-4 py-2"
+                >
                   Cancel
                 </button>
-                <button type="submit" className="bg-[#005b96] text-white text-xs font-semibold px-5 py-2 rounded-xl">
-                  Save Template
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="bg-[#005b96] text-white text-xs font-semibold px-5 py-2 rounded-xl disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save Template'}
                 </button>
               </div>
             </form>
