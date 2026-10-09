@@ -89,11 +89,6 @@ export async function POST(req: Request) {
   const userId = newId();
   const packetId = newId();
   const accessWindow = Number((await setting('default_access_window_days')) ?? 30) || 30;
-  const officeName = (await setting('hq_office_name')) ?? 'Corporate Headquarters';
-  const officeAddress = (await setting('hq_office_address')) ?? '';
-  const arrival = (await setting('default_arrival_time')) ?? '8:00 AM';
-  const dress = (await setting('default_dress_code')) ?? 'Smart-Casual';
-  const reporting = (await setting('default_reporting_to')) ?? 'HR Reception';
 
   await transaction(async (q) => {
     await q(
@@ -119,15 +114,6 @@ export async function POST(req: Request) {
         [r.slug, packetId, userId, r.title, r.description, r.category, r.required ? 1 : 0, r.displayOrder, r.hasDownload ? 1 : 0]
       );
     }
-    await q(`INSERT INTO medical_records (id, employee_id) VALUES (?, ?)`, [newId(), userId]);
-    await q(
-      `INSERT INTO first_day_guides
-         (id, employee_id, office_name, office_address, arrival_time, dress_code, reporting_to, items_to_bring)
-       VALUES (?, ?, ?, ?, ?, ?, ?,
-         JSON_ARRAY('Original Government Valid IDs', 'Original Physical NBI Clearance Certificate',
-                    'Bank Account Details for Payroll Authorization', 'Signed Physical Employment Contract Copy'))`,
-      [newId(), userId, officeName, officeAddress, arrival, dress, reporting]
-    );
   });
 
   await auditEvent({

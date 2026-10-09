@@ -60,6 +60,13 @@ export default function HRMessagesPage() {
     if (me) void loadThreads();
   }, [me]);
 
+  // Poll so incoming hire messages appear without manual refresh.
+  useEffect(() => {
+    if (!me) return;
+    const timer = setInterval(() => void loadThreads(), 10000);
+    return () => clearInterval(timer);
+  }, [me]);
+
   const active = threads.find((t) => t.id === activeId) ?? threads[0] ?? null;
   const activeMessages = useMemo(
     () => messages.filter((m) => active && m.thread_id === active.id),
@@ -106,7 +113,7 @@ export default function HRMessagesPage() {
           <div className="px-4 py-3 border-b border-[#f1f5f9] text-xs font-bold text-[#011f4b]">
             Conversations ({threads.length})
           </div>
-          <div className="divide-y divide-[#f1f5f9] max-h-[48rem] overflow-y-auto">
+          <div className="divide-y divide-[#f1f5f9] h-[60vh] overflow-y-auto">
             {loading && <p className="px-4 py-6 text-xs text-[#6497b1] text-center">Loading...</p>}
             {!loading && threads.length === 0 && (
               <p className="px-4 py-6 text-xs text-[#6497b1] text-center">No conversations yet.</p>
@@ -157,7 +164,7 @@ export default function HRMessagesPage() {
                   <div className="text-[11px] text-[#6497b1] truncate">{active.status}</div>
                 </div>
               </div>
-              <div className="px-4 py-4 space-y-3 max-h-[48rem] min-h-[28rem] overflow-y-auto">
+              <div className="px-4 py-4 space-y-3 h-[60vh] overflow-y-auto">
                 {activeMessages.map((m) =>
                   m.sender_role === 'hr' ? (
                     <div key={m.id} className="flex justify-end">

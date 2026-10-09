@@ -76,6 +76,14 @@ export const EMPLOYMENT_FORMS: { id: string; title: string; desc: string }[] = [
   { id: 'form-comprehension', title: 'Comprehension Test', desc: 'Employee handbook comprehension assessment' },
 ];
 
+/** Download URL for an uploaded file. Served via the authenticated /api/files route (never raw static). */
+export function fileUrl(storedPath: string | null | undefined): string {
+  if (!storedPath) return '#';
+  const clean = storedPath.startsWith('/') ? storedPath : `/${storedPath}`;
+  if (!clean.startsWith('/uploads/')) return clean;
+  return `/api/files${clean}`;
+}
+
 const MONTHS = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
 
 export function formatStartDate(iso: string): string {

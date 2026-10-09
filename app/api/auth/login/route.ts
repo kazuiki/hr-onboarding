@@ -1,4 +1,4 @@
-import { query, queryOne, auditEvent, type Row } from '@/lib/server-db';
+import { query, queryOne, auditEvent, checkAndVoidExpiredAccess, type Row } from '@/lib/server-db';
 import { createSession, INVALID_LOGIN_MESSAGE, jsonError } from '@/lib/auth';
 
 interface LoginBody {
@@ -25,6 +25,12 @@ export async function POST(req: Request) {
     [email, password]
   );
   if (!user || !user.is_active) return jsonError(INVALID_LOGIN_MESSAGE, 401);
+
+  // 30-day onboarding window: incomplete hires past the window are voided.
+  if (user.role === 'employee') {
+    const window = await checkAndVoidExpiredAccess(String(user.id));
+    if (window.expired) return jsonError(INVALID_LOGIN_MESSAGE, 401);
+  }
 
   await query(`UPDATE users SET last_login_at = NOW() WHERE id = ?`, [user.id]);
   await createSession(String(user.id));

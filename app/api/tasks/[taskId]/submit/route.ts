@@ -1,3 +1,5 @@
+import { unlink } from 'fs/promises';
+import path from 'path';
 import { query, newId, auditEvent, saveUpload, type Row } from '@/lib/server-db';
 import { getSessionUser, jsonError } from '@/lib/auth';
 
@@ -35,6 +37,23 @@ export async function POST(req: Request, ctx: Ctx) {
     if (!allowed.includes(ext)) return jsonError(`"${file.name}" is not an accepted type.`);
     if (file.size > maxBytes) {
       return jsonError(`"${file.name}" exceeds the ${isPhoto ? '5MB' : '10MB'} limit.`);
+    }
+  }
+
+  // Re-upload replaces the previous submission: drop old rows + disk files
+  // (e.g. after an HR rejection) so only the newest files remain.
+  const previous = await query<Row & { file_path: string }>(
+    `SELECT file_path FROM task_files WHERE task_id = ? AND employee_id = ?`,
+    [taskId, user.id]
+  );
+  await query(`DELETE FROM task_files WHERE task_id = ? AND employee_id = ?`, [taskId, user.id]);
+  for (const row of previous) {
+    const oldPath = typeof row.file_path === 'string' ? row.file_path : '';
+    if (!oldPath.startsWith('/uploads/')) continue;
+    try {
+      await unlink(path.join(process.cwd(), 'public', oldPath.replace(/^\/+/, '')));
+    } catch {
+      // Already gone from disk — row is already deleted above.
     }
   }
 

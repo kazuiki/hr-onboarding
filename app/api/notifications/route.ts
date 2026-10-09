@@ -20,9 +20,10 @@ export async function GET() {
 
 interface ReadBody {
   id?: unknown;
+  ids?: unknown;
 }
 
-/** Mark one alert (or every alert) as read. */
+/** Mark one alert, a batch of alerts, or every alert as read. */
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return jsonError('Sign-in required.', 401);
@@ -33,7 +34,17 @@ export async function POST(req: Request) {
   } catch {
     // Empty body means "mark all".
   }
-  if (typeof body.id === 'number' || typeof body.id === 'string') {
+  if (Array.isArray(body.ids)) {
+    const ids = body.ids
+      .filter((v): v is number | string => typeof v === 'number' || typeof v === 'string')
+      .slice(0, 50);
+    if (ids.length > 0) {
+      await query(
+        `UPDATE notifications SET is_read = 1 WHERE user_id = ? AND id IN (${ids.map(() => '?').join(',')})`,
+        [user.id, ...ids]
+      );
+    }
+  } else if (typeof body.id === 'number' || typeof body.id === 'string') {
     await query(`UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?`, [body.id, user.id]);
   } else {
     await query(`UPDATE notifications SET is_read = 1 WHERE user_id = ?`, [user.id]);

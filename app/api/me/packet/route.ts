@@ -10,7 +10,7 @@ export async function GET() {
   const profile = await query<Row>(
     `SELECT e.id, e.employee_number, e.position, e.department, e.manager_name,
             e.start_date, e.access_window_days, e.status, e.avatar_url,
-            e.welcome_message, e.completion_pct, e.orientation_watched,
+            e.welcome_message, e.completion_pct, e.orientation_watched, e.created_at,
             u.email, u.full_name
      FROM employees e JOIN users u ON u.id = e.id WHERE e.id = ?`,
     [user.id]
@@ -34,25 +34,6 @@ export async function GET() {
      FROM shared_files WHERE employee_id = ?`,
     [user.id]
   );
-  const medical = await query<Row>(
-    `SELECT clinic_name, clinic_address, clinic_phone, clinic_schedule, expense_notes,
-            referral_doc_path, status, feedback
-     FROM medical_records WHERE employee_id = ?`,
-    [user.id]
-  );
-  const firstDay = await query<Row>(
-    `SELECT office_name, office_address, arrival_time, dress_code, reporting_to,
-            items_to_bring, intro_video_url, map_instructions, is_acknowledged
-     FROM first_day_guides WHERE employee_id = ?`,
-    [user.id]
-  );
-  const policy = await query<Row>(
-    `SELECT id, version, title, content, effective_date
-     FROM privacy_policies WHERE is_current = 1 ORDER BY effective_date DESC LIMIT 1`
-  );
-  const ack = policy.length > 0
-    ? await query(`SELECT id FROM privacy_acknowledgements WHERE employee_id = ? AND policy_id = ?`, [user.id, policy[0].id])
-    : [];
   const notifications = await query<Row>(
     `SELECT id, type, title, body, link_section, task_id, is_read, created_at
      FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`,
@@ -82,10 +63,6 @@ export async function GET() {
     tasks,
     files,
     sharedFiles: shared,
-    medical: medical[0] ?? null,
-    firstDay: firstDay[0] ?? null,
-    privacyPolicy: policy[0] ?? null,
-    privacyAcknowledged: ack.length > 0,
     notifications,
     unreadCount: Number(unread[0]?.n ?? 0),
     threads,

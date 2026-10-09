@@ -3,13 +3,14 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "lint": "eslint",
+    "update": "git pull && npm install",
+    "deploy": "git pull && npm install && next build && next start -H 0.0.0.0 -p 3000"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.12.7",
     "lucide-react": "^1.46.0",
     "mysql2": "^3.24.5",
     "next": "16.3.5",

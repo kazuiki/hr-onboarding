@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Clock,
   Download,
+  Eye,
   FileCheck,
   FileText,
   HelpCircle,
@@ -36,7 +37,7 @@ import {
   X,
 } from 'lucide-react';
 
-import { EMPLOYMENT_FORMS, type TaskStatus } from '@/lib/onboarding';
+import { EMPLOYMENT_FORMS, fileUrl, type TaskStatus } from '@/lib/onboarding';
 import { useMe } from '@/lib/use-me';
 
 type NavSection =
@@ -126,6 +127,7 @@ interface ApiEmployee {
   welcome_message: string | null;
   completion_pct: number;
   orientation_watched: number;
+  created_at: string;
   email: string;
   full_name: string;
 }
@@ -202,34 +204,20 @@ interface Packet {
   tasks: ApiTask[];
   files: ApiTaskFile[];
   sharedFiles: SharedFileRow[];
-  medical: {
-    clinic_name: string;
-    clinic_address: string | null;
-    clinic_phone: string | null;
-    clinic_schedule: string | null;
-    expense_notes: string | null;
-    referral_doc_path: string | null;
-    status: string;
-    feedback: string | null;
-  } | null;
-  firstDay: {
-    office_name: string;
-    office_address: string;
-    arrival_time: string;
-    dress_code: string;
-    reporting_to: string;
-    items_to_bring: string | null;
-    intro_video_url: string | null;
-    map_instructions: string | null;
-    is_acknowledged: number;
-  } | null;
-  privacyPolicy: { id: string; version: string; title: string; content: string; effective_date: string } | null;
-  privacyAcknowledged: boolean;
   notifications: ApiNotification[];
   unreadCount: number;
   threads: ApiThread[];
   messages: ApiMessage[];
 }
+
+// Static first-day content (no database; design-owned).
+const FIRST_DAY_BRING: { title: string; desc: string }[] = [
+  { title: 'Valid ID', desc: 'Government-issued ID for registration.' },
+  { title: 'Pen and Notebook', desc: 'For taking notes during orientation.' },
+  { title: 'Completed Documents', desc: 'Any additional forms provided by HR.' },
+  { title: 'Jacket', desc: 'For cold rooms or air-conditioned areas.' },
+  { title: 'Professional Attitude', desc: 'Bring your best, smile and positive energy!' },
+];
 
 function renderStatusBadge(status: TaskStatus) {
   switch (status) {
@@ -280,6 +268,12 @@ function initialsOf(name: string): string {
     .toUpperCase();
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 export default function EmployeeDashboardPage() {
   const router = useRouter();
   const { me, loading: meLoading } = useMe({ allow: ['employee'] });
@@ -312,7 +306,45 @@ export default function EmployeeDashboardPage() {
   }, [me]);
 
   // Active section controlled by Left Sidebar
-  const [activeSection, setActiveSection] = useState<NavSection>('pre_employment');
+  const [activeSection, setActiveSection] = useState<NavSection>('welcome');
+
+  // Poll so HR uploads, shared files, and reviews appear live without refresh.
+  useEffect(() => {
+    if (!me) return;
+    const timer = setInterval(() => void loadPacket(), 10000);
+    return () => clearInterval(timer);
+  }, [me]);
+
+  // Auto mark-read: opening a section clears its unread alerts, no bell click needed.
+  useEffect(() => {
+    if (!me || !packet) return;
+    const ids = (packet.notifications ?? [])
+      .filter((n) => !n.is_read && n.link_section === activeSection)
+      .map((n) => n.id);
+    if (ids.length === 0) return;
+    (async () => {
+      try {
+        await fetch('/api/notifications', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids }),
+        });
+      } catch {
+        return;
+      }
+      setPacket((prev) =>
+        prev
+          ? {
+              ...prev,
+              notifications: prev.notifications.map((n) =>
+                ids.includes(n.id) ? { ...n, is_read: 1 } : n
+              ),
+              unreadCount: Math.max(0, prev.unreadCount - ids.length),
+            }
+          : prev
+      );
+    })();
+  }, [me, packet, activeSection]);
 
   // Mobile drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -328,11 +360,13 @@ export default function EmployeeDashboardPage() {
     Array(ORIENTATION_ITEMS.length).fill(false)
   );
 
-  // Acknowledgements come straight from the server record.
-  const firstDayReady = (packet?.firstDay?.is_acknowledged ?? 0) === 1;
-  const privacyAck = packet?.privacyAcknowledged ?? false;
-  const medicalReviewed =
-    packet?.medical?.status === 'submitted' || packet?.medical?.status === 'approved';
+  // Section acknowledgements are derived from the checklist tasks (the only
+  // database these sections touch). Section content itself is fully static.
+  const sectionDone = (category: string): boolean =>
+    tasks.some((t) => t.category === category && (t.status === 'submitted' || t.status === 'approved'));
+  const firstDayReady = sectionDone('first_day');
+  const privacyAck = sectionDone('privacy');
+  const medicalReviewed = sectionDone('medical');
 
   // Modals & Upload State
   const [uploadTask, setUploadTask] = useState<{ id: string; title: string; required: boolean } | null>(null);
@@ -348,14 +382,13 @@ export default function EmployeeDashboardPage() {
       (map[f.task_id] = map[f.task_id] || []).push({
         name: f.file_name,
         sizeLabel: formatFileSize(f.file_size),
-        path: f.file_path,
+        path: fileUrl(f.file_path),
       });
     }
     return map;
   }, [packet]);
 
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
-  const [isPrivacyModalOpen, setIsPrivacyModalOpen] = useState(false);
 
   // Help Chat State
   const [chatInput, setChatInput] = useState('');
@@ -384,7 +417,7 @@ export default function EmployeeDashboardPage() {
     () =>
       (packet?.files ?? [])
         .filter((f) => f.task_id === 'req-photo')
-        .map((f) => ({ id: f.id, name: f.file_name, sizeLabel: formatFileSize(f.file_size), previewUrl: f.file_path })),
+        .map((f) => ({ id: f.id, name: f.file_name, sizeLabel: formatFileSize(f.file_size), previewUrl: fileUrl(f.file_path) })),
     [packet]
   );
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
@@ -413,13 +446,15 @@ export default function EmployeeDashboardPage() {
   const approvedCount = tasks.filter((t) => t.required === 1 && t.status === 'approved').length;
   const progressPct = Math.round((approvedCount / (totalRequired || 1)) * 100);
 
-  // Days left inside the onboarding window
+  // Days left in the fixed onboarding window counted from account creation.
   const remainingDays = useMemo(() => {
     if (!employee) return null;
-    const windowDays = employee.access_window_days || 30;
-    const end = new Date(`${employee.start_date}T00:00:00`).getTime() + windowDays * 86400000;
+    const windowDays = Number(employee.access_window_days) || 30;
+    const created = new Date(String(employee.created_at).replace(' ', 'T')).getTime();
+    if (!Number.isFinite(created)) return windowDays;
     // eslint-disable-next-line react-hooks/purity -- clock read for a countdown label
-    return Math.max(0, Math.ceil((end - Date.now()) / 86400000));
+    const elapsed = Math.max(0, Math.floor((Date.now() - created) / 86400000));
+    return Math.max(0, windowDays - elapsed);
   }, [employee]);
 
   // Filter tasks specific to Pre-Employment Requirements checklist
@@ -445,17 +480,6 @@ export default function EmployeeDashboardPage() {
     const map: Record<string, SharedFileRow> = {};
     for (const row of packet?.sharedFiles ?? []) map[row.slot] = row;
     return map;
-  }, [packet]);
-
-  const bringItems = useMemo(() => {
-    const raw = packet?.firstDay?.items_to_bring;
-    if (!raw) return [] as string[];
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      return Array.isArray(parsed) ? parsed.map(String) : [];
-    } catch {
-      return [];
-    }
   }, [packet]);
 
   const markNotifRead = async (id: number) => {
@@ -518,7 +542,10 @@ export default function EmployeeDashboardPage() {
     }
   };
 
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+
   const handleSignOut = async () => {
+    setConfirmSignOut(false);
     await fetch('/api/auth/logout', { method: 'POST' });
     router.push('/login');
     router.refresh();
@@ -592,12 +619,6 @@ export default function EmployeeDashboardPage() {
     }
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
-  };
-
   const handlePhotoFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     const accepted = ['image/png', 'image/jpeg', 'image/jpg'];
@@ -652,14 +673,9 @@ export default function EmployeeDashboardPage() {
   };
 
   const handlePrivacyAck = async () => {
-    if (!packet?.privacyPolicy) return;
     setActionError('');
     try {
-      const res = await fetch('/api/privacy/ack', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ policyId: packet.privacyPolicy.id }),
-      });
+      const res = await fetch('/api/privacy/ack', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
         setActionError(data.error || 'Could not save acknowledgement.');
@@ -892,7 +908,7 @@ export default function EmployeeDashboardPage() {
               {/* Sign Out (desktop only; mobile uses drawer sidebar logout) */}
               <button
                 type="button"
-                onClick={() => void handleSignOut()}
+                onClick={() => setConfirmSignOut(true)}
                 className="hidden sm:inline-flex text-[#6497b1] hover:text-[#011f4b] p-2 rounded-xl hover:bg-[#eaf2f8] transition-colors shrink-0"
                 title="Sign Out"
               >
@@ -1006,7 +1022,10 @@ export default function EmployeeDashboardPage() {
             <div className="p-4 border-t border-[#e2e8f0]">
               <button
                 type="button"
-                onClick={() => void handleSignOut()}
+                onClick={() => {
+                  setDrawerOpen(false);
+                  setConfirmSignOut(true);
+                }}
                 className="flex items-center gap-2 text-xs font-semibold text-[#6497b1] hover:text-rose-600 transition-colors px-3 py-2 rounded-xl hover:bg-rose-50"
               >
                 <LogOut className="w-4 h-4" />
@@ -1226,7 +1245,7 @@ export default function EmployeeDashboardPage() {
                           {req.has_download === 1 && (
                             req.template_file_path ? (
                               <a
-                                href={req.template_file_path}
+                                href={fileUrl(req.template_file_path)}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="inline-flex items-center justify-center gap-1.5 px-3 py-3 min-[420px]:py-2 text-xs font-semibold whitespace-nowrap border border-[#b3cde0] text-[#005b96] hover:bg-[#eaf2f8] rounded-xl transition-colors min-h-11"
@@ -1426,7 +1445,7 @@ export default function EmployeeDashboardPage() {
                         <div className="flex flex-col min-[420px]:flex-row gap-2">
                           {shared ? (
                             <a
-                              href={shared.file_path}
+                              href={fileUrl(shared.file_path)}
                               target="_blank"
                               rel="noreferrer"
                               title={`Download ${shared.file_name}`}
@@ -1601,7 +1620,7 @@ export default function EmployeeDashboardPage() {
                   </p>
                   {sharedBySlot['medical-referral'] ? (
                     <a
-                      href={sharedBySlot['medical-referral'].file_path}
+                      href={fileUrl(sharedBySlot['medical-referral'].file_path)}
                       target="_blank"
                       rel="noreferrer"
                       title={`Download ${sharedBySlot['medical-referral'].file_name}`}
@@ -1632,33 +1651,19 @@ export default function EmployeeDashboardPage() {
                     <div className="flex items-start gap-2">
                       <MapPin className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">{packet.medical?.clinic_name || 'Accredited clinic'}</span>
-                        {packet.medical?.clinic_address ? ` at ${packet.medical.clinic_address}` : '.'}
+                        <span className="font-bold text-[#011f4b]">Clinica Manila</span>
+                        {' at SM Center Pasig, E. Rodriguez Jr. Ave corner Dona Julia Vargas Ave., Frontera Verde, Ortigas Center, Pasig, 1604 Metro Manila.'}
                       </p>
                     </div>
-                    {packet.medical?.clinic_phone && (
-                      <div className="flex items-start gap-2">
-                        <Phone className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
-                        <p className="text-[#03396c]">{packet.medical.clinic_phone}</p>
-                      </div>
-                    )}
-                    {packet.medical?.clinic_schedule && (
-                      <div className="flex items-start gap-2">
-                        <Clock className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
-                        <p className="text-[#03396c]">{packet.medical.clinic_schedule}</p>
-                      </div>
-                    )}
-                  </div>
-                  {packet.medical?.expense_notes && (
-                    <p className="text-xs sm:text-sm text-[#03396c] leading-relaxed bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-4 py-3">
-                      {packet.medical.expense_notes}
-                    </p>
-                  )}
-                  {packet.medical?.feedback && (
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700">
-                      <strong>HR feedback:</strong> {packet.medical.feedback}
+                    <div className="flex items-start gap-2">
+                      <Phone className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
+                      <p className="text-[#03396c]">(02) 8696 7055</p>
                     </div>
-                  )}
+                    <div className="flex items-start gap-2">
+                      <Clock className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
+                      <p className="text-[#03396c]">Monday to Saturday: 8:00 AM – 6:00 PM</p>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Instructions */}
@@ -1729,9 +1734,27 @@ export default function EmployeeDashboardPage() {
                     </div>
                     <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Dress Code</h2>
                   </div>
-                  <p className="text-xs sm:text-sm font-semibold text-[#03396c]">
-                    {packet.firstDay?.dress_code || 'Smart-Casual'}
-                  </p>
+                  <p className="text-xs sm:text-sm font-semibold text-[#03396c]">Business Casual</p>
+                  <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 text-xs sm:text-sm leading-relaxed">
+                    <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-4 py-3">
+                      <p className="font-bold text-[#011f4b] mb-1.5">Acceptable</p>
+                      <ul className="text-[#03396c] space-y-1 list-disc list-inside">
+                        <li>Collared shirts / blouses</li>
+                        <li>Dress pants / slacks</li>
+                        <li>Closed-toe shoes</li>
+                        <li>Modest dresses / skirts (knee-length)</li>
+                      </ul>
+                    </div>
+                    <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-4 py-3">
+                      <p className="font-bold text-[#011f4b] mb-1.5">Not Allowed</p>
+                      <ul className="text-[#03396c] space-y-1 list-disc list-inside">
+                        <li>T-shirts / tank tops</li>
+                        <li>Shorts / mini skirts</li>
+                        <li>Flip-flops / sandals</li>
+                        <li>Overly casual wear</li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
 
                 {/* Schedule */}
@@ -1746,55 +1769,51 @@ export default function EmployeeDashboardPage() {
                     <div className="flex items-start gap-2">
                       <Clock className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">Expected Arrival Time:</span>{' '}
-                        {packet.firstDay?.arrival_time || '8:00 AM'}.
+                        <span className="font-bold text-[#011f4b]">Expected Arrival Time:</span> 9:00 AM.
                       </p>
                     </div>
                     <div className="flex items-start gap-2">
                       <MapPin className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">Office Location:</span>{' '}
-                        {packet.firstDay
-                          ? `${packet.firstDay.office_name}, ${packet.firstDay.office_address}`
-                          : 'Corporate Headquarters.'}
+                        <span className="font-bold text-[#011f4b]">Office Location:</span> Units 3301-3302,
+                        33rd Floor Corporate Finance Plaza Condominium, Ruby Road, Ortigas Center,
+                        Barangay San Antonio, Pasig City.
                       </p>
                     </div>
                     <div className="flex items-start gap-2">
                       <Building2 className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">Report To:</span>{' '}
-                        {packet.firstDay?.reporting_to || 'HR Reception'}.
+                        <span className="font-bold text-[#011f4b]">Report To:</span> HR Department -
+                        Reception Area.
                       </p>
                     </div>
-                    {packet.firstDay?.map_instructions && (
-                      <p className="text-[#03396c] text-xs sm:text-sm">{packet.firstDay.map_instructions}</p>
-                    )}
                   </div>
                 </div>
 
                 {/* Things To Bring */}
-                {bringItems.length > 0 && (
-                  <div className="space-y-3">
-                    <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Things To Bring</h2>
-                    <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
-                      {bringItems.map((item) => (
-                        <div
-                          key={item}
-                          className="bg-white rounded-2xl border border-[#e2e8f0] p-4 shadow-sm flex items-start gap-2.5"
-                        >
-                          <span className="w-8 h-8 rounded-lg bg-[#eaf2f8] flex items-center justify-center shrink-0">
-                            <Check className="w-4 h-4 text-emerald-600" />
+                <div className="space-y-3">
+                  <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Things To Bring</h2>
+                  <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
+                    {FIRST_DAY_BRING.map((item) => (
+                      <div
+                        key={item.title}
+                        className="bg-white rounded-2xl border border-[#e2e8f0] p-4 shadow-sm flex items-start gap-2.5"
+                      >
+                        <span className="w-8 h-8 rounded-lg bg-[#eaf2f8] flex items-center justify-center shrink-0">
+                          <Check className="w-4 h-4 text-emerald-600" />
+                        </span>
+                        <span className="min-w-0">
+                          <span className="text-xs sm:text-sm font-bold text-[#011f4b] block leading-snug">
+                            {item.title}
                           </span>
-                          <span className="min-w-0">
-                            <span className="text-xs sm:text-sm font-bold text-[#011f4b] block leading-snug">
-                              {item}
-                            </span>
+                          <span className="text-[11px] sm:text-xs text-[#6497b1] block leading-relaxed mt-0.5">
+                            {item.desc}
                           </span>
-                        </div>
-                      ))}
-                    </div>
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                )}
+                </div>
 
                 {/* First Day Orientation Checklist */}
                 <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-4">
@@ -1875,38 +1894,19 @@ export default function EmployeeDashboardPage() {
                 {/* Company Introduction */}
                 <div className="space-y-3">
                   <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Company Introduction</h2>
-                  {packet.firstDay?.intro_video_url ? (
-                    <a
-                      href={packet.firstDay.intro_video_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label="Play company introduction video"
-                      className="block w-full bg-[#011f4b] rounded-2xl overflow-hidden shadow-sm hover:bg-[#03396c] transition-colors"
-                    >
-                      <span className="flex flex-col items-center justify-center gap-2 px-6 py-12 sm:py-16 min-h-64 sm:min-h-100 text-center">
-                        <span className="w-14 h-14 rounded-full bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center">
-                          <Play className="w-6 h-6 text-white ml-0.5" />
-                        </span>
-                        <span className="text-sm sm:text-base font-bold text-white">
-                          Company Introduction Video
-                        </span>
-                        <span className="text-xs text-[#b3cde0]">
-                          Learn about our mission, vision, and values.
-                        </span>
+                  <div className="w-full bg-[#011f4b] rounded-2xl overflow-hidden shadow-sm">
+                    <span className="flex flex-col items-center justify-center gap-2 px-6 py-20 sm:py-28 min-h-96 text-center">
+                      <span className="w-14 h-14 rounded-full bg-white/15 border border-white/25 backdrop-blur-sm flex items-center justify-center">
+                        <Play className="w-6 h-6 text-white ml-0.5" />
                       </span>
-                    </a>
-                  ) : (
-                    <div className="w-full bg-[#011f4b] rounded-2xl overflow-hidden shadow-sm">
-                      <span className="flex flex-col items-center justify-center gap-2 px-6 py-12 sm:py-16 text-center">
-                        <span className="text-sm sm:text-base font-bold text-white">
-                          Company Introduction Video
-                        </span>
-                        <span className="text-xs text-[#b3cde0]">
-                          HR has not shared the video link yet.
-                        </span>
+                      <span className="text-sm sm:text-base font-bold text-white">
+                        Company Introduction Video
                       </span>
-                    </div>
-                  )}
+                      <span className="text-xs text-[#b3cde0]">
+                        Learn about our mission, vision, and values.
+                      </span>
+                    </span>
+                  </div>
                   <p className="text-[11px] sm:text-xs text-[#6497b1] leading-relaxed text-center">
                     Watch this video to learn more about our company culture, history, and what makes us unique.
                   </p>
@@ -1968,33 +1968,103 @@ export default function EmployeeDashboardPage() {
                   </p>
                 </div>
 
-                {/* Current notice from HR */}
-                {packet.privacyPolicy && (
-                  <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
+                {/* What We Collect */}
+                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-[#eaf2f8] flex items-center justify-center text-[#005b96] shrink-0">
+                      <FileText className="w-4.5 h-4.5" />
+                    </div>
                     <h2 className="text-base sm:text-lg font-bold text-[#011f4b] leading-snug">
-                      {packet.privacyPolicy.title}
+                      What Personal Information We Collect
                     </h2>
-                    <p className="text-[11px] text-[#6497b1] tabular-nums">
-                      Version {packet.privacyPolicy.version} · Effective {packet.privacyPolicy.effective_date}
-                    </p>
-                    <p className="text-xs sm:text-sm text-[#03396c] leading-relaxed">
-                      {packet.privacyPolicy.content}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setIsPrivacyModalOpen(true)}
-                      className="text-xs font-bold text-[#005b96] hover:underline pt-1"
-                    >
-                      View Full Policy Text
-                    </button>
                   </div>
-                )}
+                  <ul className="text-xs sm:text-sm text-[#03396c] space-y-1.5 list-disc list-inside leading-relaxed">
+                    <li>Basic identification information (name, address, contact details)</li>
+                    <li>Government-issued IDs and numbers (SSS, PhilHealth, PAG-IBIG, TIN)</li>
+                    <li>Educational background and employment history</li>
+                    <li>Medical records for pre-employment requirements</li>
+                    <li>Payroll and banking information</li>
+                    <li>Performance evaluations and work-related documents</li>
+                  </ul>
+                </div>
+
+                {/* How We Use It */}
+                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-[#eaf2f8] flex items-center justify-center text-[#005b96] shrink-0">
+                      <Lock className="w-4.5 h-4.5" />
+                    </div>
+                    <h2 className="text-base sm:text-lg font-bold text-[#011f4b] leading-snug">
+                      How We Use Your Information
+                    </h2>
+                  </div>
+                  <ul className="text-xs sm:text-sm text-[#03396c] space-y-1.5 list-disc list-inside leading-relaxed">
+                    <li>Employee verification and onboarding processes</li>
+                    <li>Payroll processing and benefits administration</li>
+                    <li>Compliance with legal and regulatory requirements</li>
+                    <li>Performance management and career development</li>
+                    <li>Internal communications and company operations</li>
+                    <li>Health and safety management</li>
+                  </ul>
+                </div>
+
+                {/* Rights */}
+                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-[#eaf2f8] flex items-center justify-center text-[#005b96] shrink-0">
+                      <Eye className="w-4.5 h-4.5" />
+                    </div>
+                    <h2 className="text-base sm:text-lg font-bold text-[#011f4b] leading-snug">
+                      Your Data Privacy Rights
+                    </h2>
+                  </div>
+                  <ul className="text-xs sm:text-sm text-[#03396c] space-y-1.5 leading-relaxed">
+                    <li><strong className="text-[#011f4b]">Be Informed:</strong> Know how your data is being collected and used</li>
+                    <li><strong className="text-[#011f4b]">Access:</strong> Request access to your personal information</li>
+                    <li><strong className="text-[#011f4b]">Correct:</strong> Request correction of inaccurate or incomplete data</li>
+                    <li><strong className="text-[#011f4b]">Erase or Block:</strong> Request deletion or blocking of your data under certain conditions</li>
+                    <li><strong className="text-[#011f4b]">Object:</strong> Object to processing of your data for legitimate reasons</li>
+                    <li><strong className="text-[#011f4b]">Damages:</strong> Be indemnified for damages due to inaccurate, incomplete, or unauthorized processing</li>
+                  </ul>
+                </div>
+
+                {/* HR Internal Handling */}
+                <div className="bg-white rounded-2xl border border-[#e2e8f0] p-4 sm:p-6 shadow-sm space-y-3">
+                  <h2 className="text-base sm:text-lg font-bold text-[#011f4b] leading-snug">
+                    HR Internal Data Handling Policy
+                  </h2>
+                  <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3 text-xs sm:text-sm leading-relaxed">
+                    <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-4 py-3">
+                      <p className="font-bold text-[#011f4b] mb-1.5">Security Measures</p>
+                      <ul className="text-[#03396c] space-y-1 list-disc list-inside">
+                        <li>Secure encrypted database storage</li>
+                        <li>Restricted to authorized HR personnel only</li>
+                        <li>Regular security audits and compliance reviews</li>
+                        <li>Legal data retention compliance</li>
+                      </ul>
+                    </div>
+                    <div className="bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-4 py-3">
+                      <p className="font-bold text-[#011f4b] mb-1.5">Data Sharing</p>
+                      <ul className="text-[#03396c] space-y-1 list-disc list-inside">
+                        <li>Information is not shared without consent</li>
+                        <li>Disclosure only when required by law or necessary for employment</li>
+                        <li>Confidentiality agreements for service providers (e.g. payroll processors)</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
 
                 {/* Contact */}
                 <div className="bg-[#eaf2f8] rounded-2xl border border-[#b3cde0] p-4 sm:p-6 space-y-2">
                   <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">Questions or Concerns?</h2>
                   <p className="text-xs sm:text-sm text-[#03396c] leading-relaxed">
-                    If you have any questions about our data privacy practices or wish to exercise your data privacy rights, please contact HR through the Need Help section.
+                    If you have any questions about our data privacy practices or wish to exercise your
+                    data privacy rights, please contact:
+                  </p>
+                  <p className="text-xs sm:text-sm text-[#03396c] leading-relaxed">
+                    <span className="font-bold text-[#011f4b]">Data Protection Officer</span><br />
+                    Email: dpo@company.com<br />
+                    Phone: (02) 8123-4567
                   </p>
                 </div>
 
@@ -2002,7 +2072,7 @@ export default function EmployeeDashboardPage() {
                 <button
                   type="button"
                   onClick={() => void handlePrivacyAck()}
-                  disabled={privacyAck || !packet.privacyPolicy}
+                  disabled={privacyAck}
                   className={`w-full inline-flex items-center justify-center gap-2 text-white text-xs sm:text-sm font-bold px-4 py-3.5 rounded-xl transition-colors shadow-sm min-h-11 ${
                     privacyAck ? 'bg-emerald-600 cursor-default' : 'bg-[#011f4b] hover:bg-[#03396c]'
                   }`}
@@ -2039,7 +2109,7 @@ export default function EmployeeDashboardPage() {
                 </div>
 
                 {/* Messages */}
-                <div className="px-4 sm:px-5 py-4 space-y-3 max-h-[60vh] min-h-80 overflow-y-auto bg-white">
+                <div className="px-4 sm:px-5 py-4 space-y-3 h-[60vh] overflow-y-auto bg-white">
                   {helpThreads.length > 1 && (
                     <div className="flex gap-1.5 overflow-x-auto pb-1">
                       {helpThreads.map((t) => (
@@ -2186,6 +2256,34 @@ export default function EmployeeDashboardPage() {
         </div>
       </div>
 
+      {/* Sign Out Confirm Modal */}
+      {confirmSignOut && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full p-6 shadow-2xl border border-[#e2e8f0]">
+            <h3 className="text-base font-bold text-[#011f4b]">Sign out?</h3>
+            <p className="text-xs text-[#6497b1] mt-1 leading-relaxed">
+              You will need to sign in again to continue.
+            </p>
+            <div className="flex justify-end gap-2 mt-5">
+              <button
+                type="button"
+                onClick={() => setConfirmSignOut(false)}
+                className="px-4 py-2 text-xs font-semibold text-[#6497b1] hover:text-[#011f4b]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSignOut()}
+                className="bg-[#011f4b] hover:bg-[#03396c] text-white text-xs font-bold px-5 py-2 rounded-xl transition-colors"
+              >
+                Yes, Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Upload Modal */}
       {uploadTask && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2304,6 +2402,7 @@ export default function EmployeeDashboardPage() {
         </div>
       )}
 
+
       {/* Online Form Assistant Modal */}
       {isFormModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
@@ -2415,39 +2514,6 @@ export default function EmployeeDashboardPage() {
                 </button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* Privacy Policy Modal */}
-      {isPrivacyModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-[#e2e8f0] max-h-[85vh] flex flex-col">
-            <div className="flex items-center justify-between pb-3 border-b border-[#e2e8f0]">
-              <h3 className="text-base font-bold text-[#011f4b]">
-                {packet.privacyPolicy?.title || 'Employee Data Privacy Notice'}
-              </h3>
-              <button
-                onClick={() => setIsPrivacyModalOpen(false)}
-                className="text-[#6497b1] hover:text-[#011f4b]"
-                aria-label="Close policy"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="my-4 overflow-y-auto pr-2 text-xs text-[#03396c] leading-relaxed whitespace-pre-line bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
-              {packet.privacyPolicy?.content || 'No privacy notice has been published yet.'}
-            </div>
-
-            <div className="flex justify-end pt-2 border-t border-[#e2e8f0]">
-              <button
-                onClick={() => setIsPrivacyModalOpen(false)}
-                className="bg-[#005b96] hover:bg-[#03396c] text-white text-xs font-semibold px-5 py-2 rounded-xl"
-              >
-                Close Policy
-              </button>
-            </div>
           </div>
         </div>
       )}

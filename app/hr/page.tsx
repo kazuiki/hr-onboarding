@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import {
   Users,
   CheckCircle2,
@@ -85,7 +84,6 @@ const EMPTY_FORM = {
 
 export default function HROverviewPage() {
   const { me, loading: meLoading } = useMe({ allow: ['hr_manager', 'hr_assistant'] });
-  const router = useRouter();
 
   const [employees, setEmployees] = useState<EmployeeRow[]>([]);
   const [stats, setStats] = useState<Stats>({ total: 0, completed: 0, inProgress: 0, pendingReview: 0 });
@@ -166,12 +164,6 @@ export default function HROverviewPage() {
     setAddError('');
   };
 
-  const handleSignOut = async () => {
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
-    router.refresh();
-  };
-
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
     setAdding(true);
@@ -211,17 +203,6 @@ export default function HROverviewPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="sr-only">HR Overview</h2>
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="ml-auto text-xs font-semibold text-[#6497b1] hover:text-[#011f4b] transition-colors"
-        >
-          Sign out ({me.full_name})
-        </button>
-      </div>
-
       {/* Top Statistics Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
         {statCards.map((stat) => (

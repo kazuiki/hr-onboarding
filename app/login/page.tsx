@@ -47,6 +47,25 @@ export default function LoginPage() {
         setErrorMsg(data.error || 'Invalid email or password.');
         return;
       }
+      const isHrRole = data.role === 'hr_manager' || data.role === 'hr_assistant';
+      if (activeTab === 'hr' && !isHrRole) {
+        setErrorMsg('This account is not an HR account. Use the New Employee tab.');
+        try {
+          await fetch('/api/auth/logout', { method: 'POST' });
+        } catch {
+          /* session cleanup best-effort */
+        }
+        return;
+      }
+      if (activeTab === 'employee' && data.role !== 'employee') {
+        setErrorMsg('This account is not an employee account. Use the HR Portal tab.');
+        try {
+          await fetch('/api/auth/logout', { method: 'POST' });
+        } catch {
+          /* session cleanup best-effort */
+        }
+        return;
+      }
       setSuccessMsg(`Welcome back, ${data.full_name || 'user'}. Redirecting...`);
       setTimeout(() => {
         router.push(data.role === 'employee' ? '/dashboard' : '/hr');
@@ -63,22 +82,17 @@ export default function LoginPage() {
     <div className="min-h-screen bg-[#f8fafc] flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       {/* Top Brand Banner */}
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center mb-8">
-        <Link href="/" className="inline-flex items-center gap-3 group">
+        <Link href="/" className="inline-flex flex-col items-center gap-2 group">
           <Image
-            src="/PKII-LOGO1.png"
+            src="/PKII-LOGO.png"
             alt="Philkoei International, Inc."
-            width={60}
-            height={48}
-            className="h-12 w-auto object-contain shrink-0"
+            width={400}
+            height={50}
+            className="h-12 sm:h-14 w-auto object-contain shrink-0"
             priority
           />
-          <div className="text-left">
-            <div className="text-xl font-extrabold text-[#011f4b] tracking-tight">
-              Philkoei International Inc.
-            </div>
-            <div className="text-xs text-[#6497b1] font-medium">
-              Employee Onboarding Portal
-            </div>
+          <div className="text-xs text-[#6497b1] font-medium tracking-wide">
+            Employee Onboarding Portal
           </div>
         </Link>
       </div>
@@ -160,13 +174,10 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <div className="flex items-center justify-between mb-1.5">
+              <div className="mb-1.5">
                 <label className="block text-xs font-semibold text-[#03396c]">
                   Password
                 </label>
-                <a href="#forgot" className="text-xs font-medium text-[#005b96] hover:underline">
-                  Forgot?
-                </a>
               </div>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">

@@ -4,23 +4,47 @@ import { writeFile, mkdir } from 'fs/promises';
 import path from 'path';
 
 // Server-only MySQL pool. Never import this file from client components.
-const pool = mysql.createPool({
-  host: process.env.DB_HOST || '127.0.0.1',
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || 'hr_app',
-  password: process.env.DB_PASSWORD || '',
-  database: process.env.DB_NAME || 'hr_onboarding',
-  waitForConnections: true,
-  connectionLimit: 10,
-  charset: 'utf8mb4_unicode_ci',
-  // Application dates are handled as strings; keep TIMESTAMP reads stable.
-  dateStrings: true,
-});
+// All connection values come from env. No static defaults or fallbacks.
+function requiredEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) {
+    throw new Error(`Missing required database env: ${name}`);
+  }
+  return value;
+}
+
+function createPool() {
+  const portRaw = process.env.DB_PORT;
+  const port = Number(portRaw);
+  if (!portRaw || !Number.isInteger(port) || port <= 0) {
+    throw new Error('Missing or invalid required database env: DB_PORT');
+  }
+  return mysql.createPool({
+    host: requiredEnv('DB_HOST'),
+    port,
+    user: requiredEnv('DB_USER'),
+    password: requiredEnv('DB_PASSWORD'),
+    database: requiredEnv('DB_NAME'),
+    waitForConnections: true,
+    connectionLimit: 10,
+    charset: 'utf8mb4_unicode_ci',
+    // Application dates are handled as strings; keep TIMESTAMP reads stable.
+    dateStrings: true,
+  });
+}
+
+type Pool = ReturnType<typeof createPool>;
+let pool: Pool | null = null;
+
+function getPool(): Pool {
+  if (!pool) pool = createPool();
+  return pool;
+}
 
 export type Row = Record<string, unknown>;
 
 export async function query<T = Row>(sql: string, params: unknown[] = []): Promise<T[]> {
-  const [rows] = await pool.query(sql, params);
+  const [rows] = await getPool().query(sql, params);
   return rows as T[];
 }
 
@@ -33,7 +57,7 @@ export async function queryOne<T = Row>(sql: string, params: unknown[] = []): Pr
 export async function transaction<T>(
   fn: (q: (sql: string, params?: unknown[]) => Promise<Row[]>) => Promise<T>
 ): Promise<T> {
-  const conn = await pool.getConnection();
+  const conn = await getPool().getConnection();
   try {
     await conn.beginTransaction();
     const q = async (sql: string, params: unknown[] = []) => {
@@ -53,6 +77,62 @@ export async function transaction<T>(
 
 export function newId(): string {
   return randomUUID();
+}
+
+/** Fixed onboarding window per hire in days (overridable per row via access_window_days). */
+export const DEFAULT_ACCESS_WINDOW_DAYS = 30;
+
+export interface AccessWindow {
+  expired: boolean;
+  remainingDays: number;
+  windowDays: number;
+}
+
+/**
+ * 30-day access window counted from account creation. An hire who still has
+ * incomplete progress past the window is automatically voided (login
+ * disabled + archived). Completed hires are exempt. Safe to call on every
+ * request; voiding happens once via the status guard.
+ */
+export async function checkAndVoidExpiredAccess(employeeId: string): Promise<AccessWindow> {
+  const row = await queryOne<
+    Row & {
+      created_at: string;
+      access_window_days: number;
+      completion_pct: number;
+      status: string;
+      full_name: string;
+    }
+  >(
+    `SELECT e.created_at, e.access_window_days, e.completion_pct, e.status, u.full_name
+     FROM employees e JOIN users u ON u.id = e.id WHERE e.id = ?`,
+    [employeeId]
+  );
+  if (!row) return { expired: false, remainingDays: DEFAULT_ACCESS_WINDOW_DAYS, windowDays: DEFAULT_ACCESS_WINDOW_DAYS };
+  const windowDays = Number(row.access_window_days) || DEFAULT_ACCESS_WINDOW_DAYS;
+  const created = new Date(String(row.created_at).replace(' ', 'T')).getTime();
+  const elapsedDays = Number.isFinite(created) ? Math.floor((Date.now() - created) / 86400000) : 0;
+  const remainingDays = Math.max(0, windowDays - Math.max(0, elapsedDays));
+  const done = Number(row.completion_pct) >= 100 || row.status === 'completed';
+  if (!done && String(row.status) === 'active' && remainingDays <= 0) {
+    await query(`UPDATE users SET is_active = 0 WHERE id = ?`, [employeeId]);
+    await query(
+      `UPDATE employees SET status = 'archived', archived_at = NOW() WHERE id = ? AND status = 'active'`,
+      [employeeId]
+    );
+    await query(`DELETE FROM sessions WHERE user_id = ?`, [employeeId]);
+    await auditEvent({
+      actorId: employeeId,
+      actorName: String(row.full_name),
+      actorRole: 'employee',
+      action: 'ACCOUNT_VOID_EXPIRED',
+      targetType: 'employee',
+      targetId: employeeId,
+      details: { window_days: windowDays },
+    });
+    return { expired: true, remainingDays: 0, windowDays };
+  }
+  return { expired: false, remainingDays, windowDays };
 }
 
 export async function auditEvent(input: {

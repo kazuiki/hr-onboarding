@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { randomBytes } from 'crypto';
-import { query, queryOne, type Row } from './server-db';
+import { query, queryOne, checkAndVoidExpiredAccess, type Row } from './server-db';
 
 export const SESSION_COOKIE = 'pki_session';
 const SESSION_HOURS = 12;
@@ -28,7 +28,9 @@ export async function createSession(userId: string): Promise<string> {
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    // Company LAN serves plain http, so Secure must stay off or the
+    // browser drops the session cookie and /dashboard bounces to /login.
+    secure: false,
     path: '/',
     maxAge: SESSION_HOURS * 3600,
   });
@@ -66,6 +68,11 @@ export async function getSessionUser(): Promise<SessionUser | null> {
     [token]
   );
   if (!row) return null;
+  // Kicks expired hires out on their next request even with a live cookie.
+  if (row.role === 'employee') {
+    const window = await checkAndVoidExpiredAccess(String(row.id));
+    if (window.expired) return null;
+  }
   return {
     id: String(row.id),
     email: String(row.email),

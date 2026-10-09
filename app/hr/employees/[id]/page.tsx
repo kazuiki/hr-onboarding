@@ -20,7 +20,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useMe } from '@/lib/use-me';
-import { UPLOAD_DOC_TYPES, type TaskCategory } from '@/lib/onboarding';
+import { UPLOAD_DOC_TYPES, fileUrl, type TaskCategory } from '@/lib/onboarding';
 
 interface DocRow {
   id: string;
@@ -38,6 +38,19 @@ interface DocRow {
   submitted_at: string | null;
   reviewed_at: string | null;
   latest_file: string | null;
+  latest_file_path: string | null;
+  latest_mime: string | null;
+}
+
+function isImagePreview(mime: string | null, fileName: string | null): boolean {
+  if (mime?.startsWith('image/')) return true;
+  const ext = (fileName?.split('.').pop() || '').toLowerCase();
+  return ext === 'jpg' || ext === 'jpeg' || ext === 'png';
+}
+
+function isPdfPreview(mime: string | null, fileName: string | null): boolean {
+  if (mime === 'application/pdf') return true;
+  return (fileName?.split('.').pop() || '').toLowerCase() === 'pdf';
 }
 
 interface SharedRow {
@@ -146,6 +159,13 @@ export default function HREmployeeDetailPage() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (me) void loadDetail();
+  }, [me, loadDetail]);
+
+  // Poll so employee uploads appear live without refresh.
+  useEffect(() => {
+    if (!me) return;
+    const timer = setInterval(() => void loadDetail(), 10000);
+    return () => clearInterval(timer);
   }, [me, loadDetail]);
 
   const sharedBySlot = useMemo(() => {
@@ -366,7 +386,7 @@ export default function HREmployeeDetailPage() {
                         {file ? (
                           <span className="flex items-center gap-1.5 shrink-0">
                             <a
-                              href={file.file_path}
+                              href={fileUrl(file.file_path)}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-1 text-[#005b96] font-semibold bg-[#eaf2f8] px-2 py-1 rounded-lg max-w-[180px] hover:underline"
@@ -620,7 +640,7 @@ export default function HREmployeeDetailPage() {
       {/* View / Approve / Reject Modal */}
       {selected && employee && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-[#e2e8f0]">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-[#e2e8f0] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2 min-w-0">
                 <h3 className="text-base font-bold text-[#011f4b] truncate">{selected.title}</h3>
@@ -650,6 +670,39 @@ export default function HREmployeeDetailPage() {
                 </div>
               )}
             </div>
+
+            {selected.latest_file_path ? (
+              <div className="mb-4 rounded-xl border border-[#e2e8f0] overflow-hidden bg-[#f8fafc]">
+                {isImagePreview(selected.latest_mime, selected.latest_file || selected.file_name) ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={fileUrl(selected.latest_file_path)}
+                    alt={selected.latest_file || selected.file_name || selected.title}
+                    className="w-full max-h-[60vh] object-contain bg-slate-900"
+                  />
+                ) : isPdfPreview(selected.latest_mime, selected.latest_file || selected.file_name) ? (
+                  <iframe
+                    src={fileUrl(selected.latest_file_path)}
+                    title={selected.latest_file || selected.file_name || selected.title}
+                    className="w-full h-[60vh] bg-white"
+                  />
+                ) : (
+                  <a
+                    href={fileUrl(selected.latest_file_path)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center justify-center gap-2 px-4 py-8 text-xs font-bold text-[#005b96] hover:underline"
+                  >
+                    <FileText className="w-4 h-4" />
+                    Open {selected.latest_file || selected.file_name} in a new tab
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div className="mb-4 p-4 text-center text-xs text-[#6497b1] bg-[#f8fafc] rounded-xl border border-[#e2e8f0]">
+                No file uploaded yet.
+              </div>
+            )}
 
             {mode === 'reject' && (
               <div className="mb-4">

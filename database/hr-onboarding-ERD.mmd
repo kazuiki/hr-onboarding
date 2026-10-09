@@ -8,18 +8,13 @@ erDiagram
     users ||--o{ hr_assets : uploads
     users ||--o{ audit_events : acts
     users ||--o{ onboarding_tasks : reviews
-    users ||--o{ medical_records : reviews
     users ||--o{ review_decisions : decides
     users ||--o{ shared_files : shares
     users ||--o{ message_threads : assigned
-    users ||--o{ privacy_policies : publishes
     employees ||--|| onboarding_packets : "1:1 packet"
     employees ||--o{ onboarding_tasks : owns
-    employees ||--|| medical_records : "1:1 sensitive"
-    employees ||--|| first_day_guides : "1:1"
     employees ||--o{ task_files : uploads
     employees ||--o{ form_submissions : submits
-    employees ||--o{ privacy_acknowledgements : acks
     employees ||--o{ shared_files : receives
     employees ||--o{ message_threads : opens
     employees ||--o{ review_decisions : subject_of
@@ -31,7 +26,6 @@ erDiagram
     onboarding_tasks ||--o{ review_decisions : judged
     task_files ||--o{ message_threads : pinned_to
     task_files ||--o{ review_decisions : pinned_to
-    privacy_policies ||--o{ privacy_acknowledgements : acked_in
     message_threads ||--o{ messages : has
 
     users {
@@ -149,58 +143,6 @@ erDiagram
         json form_data
         enum status
         timestamp submitted_at
-    }
-    medical_records {
-        char id PK
-        char employee_id FK
-        varchar clinic_name
-        text clinic_address
-        varchar clinic_phone
-        varchar clinic_schedule
-        text expense_notes
-        varchar referral_doc_path
-        varchar proof_doc_path
-        enum status
-        text feedback
-        char reviewed_by FK
-        timestamp reviewed_at
-        timestamp created_at
-        timestamp updated_at
-    }
-    first_day_guides {
-        char id PK
-        char employee_id FK
-        varchar office_name
-        text office_address
-        varchar arrival_time
-        varchar dress_code
-        varchar reporting_to
-        json items_to_bring
-        text intro_video_url
-        text map_instructions
-        tinyint is_acknowledged
-        timestamp acknowledged_at
-        timestamp created_at
-        timestamp updated_at
-    }
-    privacy_policies {
-        char id PK
-        varchar version
-        varchar title
-        text content
-        date effective_date
-        tinyint is_current
-        char created_by FK
-        timestamp created_at
-    }
-    privacy_acknowledgements {
-        char id PK
-        char employee_id FK
-        char policy_id FK
-        varchar policy_version
-        timestamp acknowledged_at
-        varchar ip_address
-        varchar user_agent
     }
     hr_assets {
         char id PK

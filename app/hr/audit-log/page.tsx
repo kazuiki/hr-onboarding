@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from 'react';
-import { History, Shield } from 'lucide-react';
+import { History } from 'lucide-react';
 import { useMe } from '@/lib/use-me';
 
 interface AuditRow {
@@ -11,19 +11,28 @@ interface AuditRow {
   action: string;
   target_type: string;
   target_id: string | null;
-  details: string | null;
+  details: unknown;
   created_at: string;
 }
 
 const PAGE_SIZE = 10;
 
-function detailText(details: string | null): string {
-  if (!details) return '';
-  try {
-    const parsed = JSON.parse(details) as Record<string, unknown>;
-    return Object.entries(parsed)
+function detailText(details: unknown): string {
+  // The details column is JSON, so mysql returns an already-parsed object.
+  const entries = (obj: Record<string, unknown>): string =>
+    Object.entries(obj)
       .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v ?? '')}`)
       .join(' · ');
+  if (details == null) return '';
+  if (typeof details !== 'string') {
+    try {
+      return entries(details as Record<string, unknown>);
+    } catch {
+      return '';
+    }
+  }
+  try {
+    return entries(JSON.parse(details) as Record<string, unknown>);
   } catch {
     return details;
   }
@@ -78,14 +87,6 @@ export default function HRAuditLogPage() {
         <h2 className="text-xl font-bold text-[#011f4b]">Audit Log</h2>
         <p className="text-sm text-[#6497b1] mt-1">
           Immutable compliance trail for invitations, uploads, reviews, privacy acknowledgements, and archival.
-        </p>
-      </div>
-
-      <div className="bg-[#011f4b] text-[#b3cde0] rounded-2xl p-4 flex items-start gap-3 text-xs">
-        <Shield className="w-4 h-4 shrink-0 mt-0.5 text-[#b3cde0]" />
-        <p>
-          Audit events are append-only. HR users can read this log; employees cannot alter review decisions
-          or forge status transitions from the browser.
         </p>
       </div>
 

@@ -17,10 +17,6 @@ One schema, one file per table. Import in numeric order — every file runs
 | 07 | `07_onboarding_tasks.sql` | Checklist + review queue |
 | 08 | `08_task_files.sql` | Upload metadata (paths only, never blobs) |
 | 09 | `09_form_submissions.sql` | Online form answers (JSON) |
-| 10 | `10_medical_records.sql` | Sensitive medical data (1:1) |
-| 11 | `11_first_day_guides.sql` | First-day content (1:1) |
-| 12 | `12_privacy_policies.sql` | Versioned privacy notice |
-| 13 | `13_privacy_acknowledgements.sql` | Immutable consent proof |
 | 14 | `14_hr_assets.sql` | HR resource library |
 | 15 | `15_shared_files.sql` | HR→employee download slots |
 | 16 | `16_message_threads.sql` | Help + file threads |
@@ -31,6 +27,10 @@ One schema, one file per table. Import in numeric order — every file runs
 | 21 | `21_sessions.sql` | Login sessions |
 | 22 | `22_views.sql` | `v_review_queue`, `v_employee_progress`, `v_audit_log` |
 | 99 | `99_seed.sql` | Admin account + settings + template (no demo hires) |
+
+Medical, First Day and Data Privacy sections are static design content —
+they have no tables. Their checklist tasks (`task-med-1`, `task-firstday-1`,
+`task-privacy-1` in `onboarding_tasks`) still carry the database state.
 
 Requires MySQL 5.7+ / MariaDB 10.2+ (JSON columns), InnoDB.
 
@@ -64,8 +64,7 @@ The app never connects as root and never receives the root password.
   `public/uploads/<employee_id>/`. The API validates extension, MIME type
   and size before saving; the audit log never records file contents,
   medical details or passwords.
-- `audit_events` and `privacy_acknowledgements` are append-only by
-  convention: the app user has no UPDATE/DELETE need on them outside of
-  account removal cascades.
+- `audit_events` is append-only by convention: the app user has no
+  UPDATE/DELETE need on it outside of account removal cascades.
 - Keep `.env.local` (database credentials) out of git — it is already
   covered by `.gitignore` (`DB_*` variables live there, not in code).

@@ -5,7 +5,6 @@
 -- What this seeds:
 --   * One HR administrator account (temp password — CHANGE on first login)
 --   * Company configuration (edit in HR settings later, not in code)
---   * Current data-privacy notice
 --   * One standard onboarding template with its requirement list
 --
 -- It deliberately seeds ZERO employees, tasks or submissions: HR creates
@@ -42,12 +41,6 @@ INSERT INTO company_settings (setting_key, value_json, description) VALUES
  JSON_ARRAY('Original Government Valid IDs', 'Original Physical NBI Clearance Certificate', 'Bank Account Details for Payroll Authorization', 'Signed Physical Employment Contract Copy'),
  'Default what-to-bring list');
 
--- --- Current privacy notice (versioned; never edit, supersede instead) ---
-INSERT INTO privacy_policies (id, version, title, content, effective_date, is_current, created_by) VALUES
-('10000000-0000-0000-0000-000000000001', 'PKI-DP-2026-V1', 'Employee Data Privacy Notice',
- 'Philkoei International, Inc. collects personal and sensitive information during onboarding and employment solely for lawful HR administration, statutory compliance, payroll processing, security identification, and organizational administration, in accordance with Republic Act No. 10173 (Data Privacy Act of 2012). Submitted records are encrypted, access-controlled, and retained per company policy. Full policy text is provided in the employee portal.',
- '2026-01-05', 1, '00000000-0000-0000-0000-000000000001');
-
 -- --- Standard onboarding template ---
 INSERT INTO onboarding_templates (id, name, description, department, is_active, created_by) VALUES
 ('20000000-0000-0000-0000-000000000001', 'Standard New-Hire Packet',
@@ -75,4 +68,4 @@ INSERT INTO template_tasks (id, template_id, slug, title, description, category,
 
 -- --- Audit trail starts here ---
 INSERT INTO audit_events (id, actor_id, actor_name, actor_role, action, target_type, target_id, details) VALUES
-(UUID(), '00000000-0000-0000-0000-000000000001', 'HR Administrator', 'hr_manager', 'SYSTEM_SEED', 'system', 'hr_onboarding', JSON_OBJECT('note', 'Schema seeded: admin account, company settings, privacy notice, standard template.'));
+(UUID(), '00000000-0000-0000-0000-000000000001', 'HR Administrator', 'hr_manager', 'SYSTEM_SEED', 'system', 'hr_onboarding', JSON_OBJECT('note', 'Schema seeded: admin account, company settings, standard template.'));

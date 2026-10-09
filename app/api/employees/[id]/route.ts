@@ -28,7 +28,13 @@ export async function GET(_req: Request, ctx: Ctx) {
             t.file_name, t.feedback, t.submitted_at, t.reviewed_at,
             (SELECT f.file_name FROM task_files f
              WHERE f.task_id = t.id AND f.employee_id = t.employee_id
-             ORDER BY f.created_at DESC LIMIT 1) AS latest_file
+             ORDER BY f.created_at DESC LIMIT 1) AS latest_file,
+            (SELECT f.file_path FROM task_files f
+             WHERE f.task_id = t.id AND f.employee_id = t.employee_id
+             ORDER BY f.created_at DESC LIMIT 1) AS latest_file_path,
+            (SELECT f.mime_type FROM task_files f
+             WHERE f.task_id = t.id AND f.employee_id = t.employee_id
+             ORDER BY f.created_at DESC LIMIT 1) AS latest_mime
      FROM onboarding_tasks t WHERE t.employee_id = ?
      ORDER BY t.display_order ASC`,
     [id]
