@@ -18,9 +18,10 @@ import {
   CloudUpload,
   Upload,
   ChevronDown,
+  Stethoscope,
 } from 'lucide-react';
 import { useMe } from '@/lib/use-me';
-import { UPLOAD_DOC_TYPES, fileUrl, type TaskCategory } from '@/lib/onboarding';
+import { DEFAULT_MEDICAL_CLINIC, UPLOAD_DOC_TYPES, apiUrl, fileUrl, type MedicalClinicContent, type TaskCategory } from '@/lib/onboarding';
 
 interface DocRow {
   id: string;
@@ -129,11 +130,20 @@ export default function HREmployeeDetailPage() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
+
+  // Per-hire Accredited Clinic override (employee dashboard medical card).
+  const [medForm, setMedForm] = useState<MedicalClinicContent | null>(null);
+  const [medContent, setMedContent] = useState<MedicalClinicContent | null>(null);
+  const [medSaving, setMedSaving] = useState(false);
+  const [medSaved, setMedSaved] = useState(false);
+  const medDirtyRef = useRef(false);
+  // Submission bell clears once per employee view (loadDetail polls every 10s).
+  const submitClearedRef = useRef<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadDetail = useCallback(async () => {
     try {
-      const res = await fetch(`/api/employees/${id}`, { cache: 'no-store' });
+      const res = await fetch(apiUrl(`/api/employees/${id}`), { cache: 'no-store' });
       if (res.status === 404) {
         setEmployee(null);
         setLoadError('');
@@ -148,6 +158,19 @@ export default function HREmployeeDetailPage() {
           .sort((a, b) => a.display_order - b.display_order)
       );
       setShared(data.sharedFiles ?? []);
+      // Viewing this hire clears their "new submission" bell item.
+      if (submitClearedRef.current !== id) {
+        submitClearedRef.current = id;
+        void fetch(apiUrl('/api/notifications'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskKey: `submit:${id}` }),
+        }).catch(() => undefined);
+      }
+      const mc = (data.medicalClinic as MedicalClinicContent | null) ?? null;
+      setMedContent(mc);
+      // Never clobber in-progress HR edits on the 10s poll.
+      if (!medDirtyRef.current) setMedForm(mc ?? DEFAULT_MEDICAL_CLINIC);
       setLoadError('');
     } catch {
       setLoadError('Could not load this record. Check the database connection and refresh.');
@@ -179,7 +202,7 @@ export default function HREmployeeDetailPage() {
     setWorking(true);
     setActionError('');
     try {
-      const res = await fetch(`/api/employees/${id}/decide`, {
+      const res = await fetch(apiUrl(`/api/employees/${id}/decide`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ taskId: selected.id, decision, feedback }),
@@ -235,7 +258,7 @@ export default function HREmployeeDetailPage() {
       payload.append('docType', uploadDocType);
       payload.append('notes', uploadNotes.trim());
       payload.append('file', uploadFile);
-      const res = await fetch(`/api/employees/${id}/share`, { method: 'POST', body: payload });
+      const res = await fetch(apiUrl(`/api/employees/${id}/share`), { method: 'POST', body: payload });
       const data = await res.json();
       if (!res.ok) {
         setUploadError(data.error || 'Upload failed.');
@@ -253,7 +276,7 @@ export default function HREmployeeDetailPage() {
   const handleRemoveShared = async (slot: string) => {
     setActionError('');
     try {
-      const res = await fetch(`/api/employees/${id}/share?slot=${encodeURIComponent(slot)}`, { method: 'DELETE' });
+      const res = await fetch(apiUrl(`/api/employees/${id}/share?slot=${encodeURIComponent(slot)}`), { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) {
         setActionError(data.error || 'Could not remove the file.');
@@ -262,6 +285,39 @@ export default function HREmployeeDetailPage() {
       await loadDetail();
     } catch {
       setActionError('Could not reach the server. Try again.');
+    }
+  };
+
+  const setMed = (patch: Partial<MedicalClinicContent>) => {
+    medDirtyRef.current = true;
+    setMedSaved(false);
+    setMedForm((f) => (f ? { ...f, ...patch } : f));
+  };
+
+  const handleMedSave = async () => {
+    if (!medForm) return;
+    setMedSaving(true);
+    setActionError('');
+    setMedSaved(false);
+    try {
+      const res = await fetch(apiUrl(`/api/employees/${id}/medical-content`), {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(medForm),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.error || 'Could not save clinic details.');
+        return;
+      }
+      medDirtyRef.current = false;
+      setMedContent((data.medicalClinic as MedicalClinicContent | null) ?? medForm);
+      setMedForm((data.medicalClinic as MedicalClinicContent | null) ?? medForm);
+      setMedSaved(true);
+    } catch {
+      setActionError('Could not reach the server. Try again.');
+    } finally {
+      setMedSaving(false);
     }
   };
 
@@ -355,6 +411,103 @@ export default function HREmployeeDetailPage() {
                     className="bg-[#005b96] h-full rounded-full transition-all"
                     style={{ width: `${employee.completion_pct}%` }}
                   />
+                </div>
+              </div>
+
+              {/* Accredited Clinic Editor — per-hire medical override, always
+                  near the top no matter how many documents are submitted. */}
+              <div className="mt-6 pt-5 border-t border-[#e2e8f0]">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Stethoscope className="w-4 h-4 text-[#005b96] shrink-0" />
+                    <span className="text-xs font-bold text-[#011f4b]">Accredited Clinic</span>
+                  </div>
+                  <span
+                    className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border shrink-0 ${
+                      medContent
+                        ? 'bg-[#eaf2f8] text-[#005b96] border-[#b3cde0]'
+                        : 'bg-slate-100 text-slate-500 border-slate-200'
+                    }`}
+                  >
+                    {medContent ? 'Custom' : 'Defaults'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-[#6497b1] mt-1 mb-3">
+                  Shown to {employee.full_name} in Medical Requirements.
+                </p>
+
+                {medSaved && (
+                  <div className="mb-3 p-2.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center gap-2 text-[11px] text-emerald-700">
+                    <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+                    Saved.
+                  </div>
+                )}
+
+                {medForm && (
+                  <div className="space-y-2.5">
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#03396c] mb-1">Clinic Name</label>
+                      <input
+                        type="text"
+                        value={medForm.clinicName}
+                        onChange={(e) => setMed({ clinicName: e.target.value })}
+                        placeholder="e.g. Clinica Manila"
+                        className="w-full text-xs p-2 border border-[#b3cde0] rounded-lg text-[#011f4b] focus:border-[#005b96] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#03396c] mb-1">Clinic Phone</label>
+                      <input
+                        type="text"
+                        value={medForm.clinicPhone}
+                        onChange={(e) => setMed({ clinicPhone: e.target.value })}
+                        placeholder="e.g. (02) 8696 7055"
+                        className="w-full text-xs p-2 border border-[#b3cde0] rounded-lg text-[#011f4b] focus:border-[#005b96] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#03396c] mb-1">Clinic Address</label>
+                      <input
+                        type="text"
+                        value={medForm.clinicAddress}
+                        onChange={(e) => setMed({ clinicAddress: e.target.value })}
+                        placeholder="Street / building address"
+                        className="w-full text-xs p-2 border border-[#b3cde0] rounded-lg text-[#011f4b] focus:border-[#005b96] focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-[#03396c] mb-1">Clinic Hours</label>
+                      <input
+                        type="text"
+                        value={medForm.clinicHours}
+                        onChange={(e) => setMed({ clinicHours: e.target.value })}
+                        placeholder="e.g. Mon–Sat: 8:00 AM – 6:00 PM"
+                        className="w-full text-xs p-2 border border-[#b3cde0] rounded-lg text-[#011f4b] focus:border-[#005b96] focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between gap-2 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      medDirtyRef.current = true;
+                      setMedSaved(false);
+                      setMedForm(DEFAULT_MEDICAL_CLINIC);
+                    }}
+                    className="text-[11px] font-semibold text-[#6497b1] hover:text-[#011f4b]"
+                  >
+                    Restore defaults
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleMedSave()}
+                    disabled={medSaving || !medForm}
+                    className="bg-[#005b96] hover:bg-[#03396c] text-white text-[11px] font-bold px-4 py-2 rounded-lg disabled:opacity-50"
+                  >
+                    {medSaving ? 'Saving…' : 'Save'}
+                  </button>
                 </div>
               </div>
             </aside>

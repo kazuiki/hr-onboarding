@@ -1,5 +1,6 @@
-import { query, newId, auditEvent, saveUpload } from '@/lib/server-db';
+import { query, newId, auditEvent, notifyHrSubmission, saveUpload, fileSignatureOk, type Row } from '@/lib/server-db';
 import { getSessionUser, jsonError } from '@/lib/auth';
+import { notifyHrOfDocumentSubmission } from '@/lib/mailer';
 
 const FORM_TYPES = [
   'personal-data',
@@ -28,6 +29,18 @@ export async function POST(req: Request) {
   if (!user) return jsonError('Sign-in required.', 401);
   if (user.role !== 'employee') return jsonError('Employee sign-in required.', 403);
 
+  // Employment forms unlock on the hire's start date.
+  const hire = await query<Row & { start_date: string }>(
+    `SELECT start_date FROM employees WHERE id = ?`,
+    [user.id]
+  );
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const todayKey = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  if (hire.length === 0 || String(hire[0].start_date) > todayKey) {
+    return jsonError('Employment forms unlock on your first day.', 403);
+  }
+
   const contentType = req.headers.get('content-type') || '';
 
   if (contentType.includes('application/json')) {
@@ -47,6 +60,11 @@ export async function POST(req: Request) {
        VALUES (?, 'task-privacy-1', ?, ?, ?)`,
       [newId(), user.id, formType, JSON.stringify(body.formData)]
     );
+    await query(
+      `INSERT INTO submission_history (id, employee_id, item_kind, item_key, item_label, category, file_name, file_path, action)
+       VALUES (?, ?, 'form', ?, ?, 'form', NULL, NULL, 'upload')`,
+      [newId(), user.id, formType, formType]
+    );
     await auditEvent({
       actorId: user.id,
       actorName: user.full_name,
@@ -56,6 +74,15 @@ export async function POST(req: Request) {
       targetId: formType,
       details: { mode: 'online-answers' },
     });
+    await notifyHrOfDocumentSubmission({
+      employeeName: user.full_name,
+      employeeEmail: user.email,
+      employeeNumber: user.employee_number,
+      documentName: formType,
+      fileNames: ['Online form answers (no file attachment)'],
+      kind: 'form',
+    });
+    await notifyHrSubmission(user.id, user.full_name, formType, 'online answers');
     return Response.json({ ok: true }, { status: 201 });
   }
 
@@ -68,6 +95,10 @@ export async function POST(req: Request) {
     const ext = (file.name.split('.').pop() || '').toLowerCase();
     if (!DOC_EXT.includes(ext)) return jsonError(`"${file.name}" is not an accepted type.`);
     if (file.size > MAX_BYTES) return jsonError(`"${file.name}" exceeds the 10MB limit.`);
+    const head = new Uint8Array(await file.arrayBuffer());
+    if (!fileSignatureOk(file.name, head)) {
+      return jsonError(`"${file.name}" content does not match its file type.`);
+    }
   }
 
   const saved = [];
@@ -80,6 +111,13 @@ export async function POST(req: Request) {
      VALUES (?, 'task-privacy-1', ?, ?, ?)`,
     [newId(), user.id, formType, JSON.stringify({ files: saved })]
   );
+  for (const s of saved) {
+    await query(
+      `INSERT INTO submission_history (id, employee_id, item_kind, item_key, item_label, category, file_name, file_path, action)
+       VALUES (?, ?, 'form', ?, ?, 'form', ?, ?, 'upload')`,
+      [newId(), user.id, formType, formType, s.file_name, s.file_path]
+    );
+  }
   await auditEvent({
     actorId: user.id,
     actorName: user.full_name,
@@ -89,5 +127,14 @@ export async function POST(req: Request) {
     targetId: formType,
     details: { files: saved.map((s) => s.file_name) },
   });
+  await notifyHrOfDocumentSubmission({
+    employeeName: user.full_name,
+    employeeEmail: user.email,
+    employeeNumber: user.employee_number,
+    documentName: formType,
+    fileNames: saved.map((s) => s.file_name),
+    kind: 'form',
+  });
+  await notifyHrSubmission(user.id, user.full_name, formType, `${saved.length} file(s) uploaded`);
   return Response.json({ ok: true, files: saved.map((s) => s.file_name) }, { status: 201 });
 }

@@ -12,6 +12,7 @@ import {
   Shield,
   Unlock,
 } from 'lucide-react';
+import { apiUrl } from '@/lib/onboarding';
 
 const ORIENTATION_WATCHED_KEY = 'pki_orientation_watched';
 
@@ -43,13 +44,30 @@ export default function OrientationPage() {
   const [displayName, setDisplayName] = useState('');
 
   useEffect(() => {
-    fetch('/api/auth/me', { cache: 'no-store' })
+    fetch(apiUrl('/api/auth/me'), { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && typeof data.full_name === 'string') setDisplayName(data.full_name);
       })
       .catch(() => undefined);
   }, []);
+
+  // Server is the source of truth for the first-login gate; localStorage
+  // only skips the redirect in this browser. Fire-and-forget so a flaky
+  // connection never blocks the celebration UI.
+  const markWatchedServer = useCallback(() => {
+    void fetch(apiUrl('/api/me/orientation'), { method: 'POST' }).catch(() => undefined);
+  }, []);
+
+  // Clients flagged under the old local-only system sync once to the server.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      if (localStorage.getItem(ORIENTATION_WATCHED_KEY) === 'true') markWatchedServer();
+    } catch {
+      /* private mode — server flag still gates the next login */
+    }
+  }, [markWatchedServer]);
 
   useEffect(() => {
     if (!TEST_MODE) return;
@@ -63,6 +81,7 @@ export default function OrientationPage() {
           window.clearInterval(intervalId);
 
           localStorage.setItem(ORIENTATION_WATCHED_KEY, 'true');
+          markWatchedServer();
           setVideoFinished(true);
           setIsPlaying(false);
         }
@@ -71,7 +90,7 @@ export default function OrientationPage() {
     }, 100);
 
     return () => window.clearInterval(intervalId);
-  }, [isPlaying, videoFinished]);
+  }, [isPlaying, videoFinished, markWatchedServer]);
 
   const handleProceed = useCallback(() => {
     if (!videoFinished) return;
@@ -83,29 +102,34 @@ export default function OrientationPage() {
     TEST_DURATION_SECONDS > 0 ? (simTime / TEST_DURATION_SECONDS) * 100 : 0;
 
   return (
-    <div className="min-h-screen bg-[#011f4b] text-white flex flex-col">
-      <header className="h-14 flex items-center justify-between px-5 sm:px-8 border-b border-[#03396c]/60">
-        <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-[#f8fafc] flex flex-col justify-center py-8 sm:px-6 lg:px-8">
+      {/* Top Brand Banner — matches the sign-in pages */}
+      <div className="sm:mx-auto sm:w-full sm:max-w-3xl text-center mb-6 px-4">
+        <div className="inline-flex flex-col items-center gap-2">
           <Image
-            src="/pkii_logo.png"
+            src={apiUrl('/PKII-LOGO.png')}
             alt="Philkoei International, Inc."
-            width={180}
-            height={44}
-            className="h-11 w-auto object-contain"
+            width={400}
+            height={50}
+            className="h-11 sm:h-12 w-auto object-contain shrink-0"
             priority
           />
+          <div className="text-xs text-[#6497b1] font-medium tracking-wide">
+            Employee Onboarding Portal
+          </div>
+          <div className="mt-1 inline-flex items-center gap-2 text-[11px] text-[#005b96] font-semibold bg-[#eaf2f8] border border-[#b3cde0] rounded-full px-3 py-1">
+            <Shield className="w-3.5 h-3.5" />
+            Mandatory Orientation
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-[11px] text-[#b3cde0] font-medium border border-[#03396c] rounded-full px-3 py-1">
-          <Shield className="w-3.5 h-3.5 text-[#6497b1]" />
-          Mandatory Orientation
-        </div>
-      </header>
+      </div>
 
-      <main className="flex-1 flex flex-col items-center justify-start px-4 sm:px-8 py-8 gap-8 max-w-5xl mx-auto w-full">
+      <main className="sm:mx-auto sm:w-full sm:max-w-3xl px-4 sm:px-0">
+        <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-lg shadow-[#011f4b]/5 px-5 sm:px-8 py-8 flex flex-col items-center gap-6">
         <div className="w-full text-center space-y-2">
-          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight">
+          <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#011f4b]">
             Welcome to Philkoei,{' '}
-            <span className="text-[#b3cde0]">{displayName ? `${displayName}!` : 'new hire!'}</span>
+            <span className="text-[#005b96]">{displayName ? `${displayName}!` : 'new hire!'}</span>
           </h1>
           <p className="text-sm text-[#6497b1] max-w-xl mx-auto leading-relaxed">
             {TEST_MODE
@@ -114,7 +138,7 @@ export default function OrientationPage() {
           </p>
         </div>
 
-        <div className="w-full bg-[#03396c]/30 border border-[#03396c] rounded-2xl overflow-hidden shadow-2xl">
+        <div className="w-full bg-black border border-[#e2e8f0] rounded-xl overflow-hidden">
           <div className="relative bg-black aspect-video w-full">
             <div className="absolute inset-0 bg-gradient-to-br from-[#011f4b] via-[#03396c] to-[#005b96] opacity-70" />
 
@@ -166,7 +190,7 @@ export default function OrientationPage() {
         <div className="w-full flex flex-col items-center gap-4">
           {!videoFinished && (
             <div className="flex items-center gap-2 text-sm text-[#6497b1]">
-              <div className="w-44 h-1.5 bg-[#03396c] rounded-full overflow-hidden">
+              <div className="w-44 h-1.5 bg-[#eaf2f8] rounded-full overflow-hidden">
                 <div
                   className="h-full bg-[#6497b1] rounded-full transition-all duration-300"
                   style={{ width: `${watchedPct}%` }}
@@ -182,7 +206,7 @@ export default function OrientationPage() {
             className={`relative flex items-center gap-3 px-10 py-4 rounded-2xl font-bold text-base transition-all duration-300 ${
               videoFinished && !isRedirecting
                 ? 'bg-emerald-500 hover:bg-emerald-400 text-white shadow-lg shadow-emerald-500/25 scale-100 cursor-pointer'
-                : 'bg-[#03396c] text-[#6497b1] border border-[#03396c] cursor-not-allowed scale-95 opacity-70'
+                : 'bg-[#eaf2f8] text-[#6497b1] border border-[#e2e8f0] cursor-not-allowed scale-95 opacity-70'
             }`}
             aria-disabled={!videoFinished}
           >
@@ -211,6 +235,7 @@ export default function OrientationPage() {
               This is a quick test playback. After it completes, the portal unlocks automatically.
             </p>
           )}
+        </div>
         </div>
       </main>
     </div>

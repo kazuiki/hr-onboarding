@@ -37,7 +37,7 @@ import {
   X,
 } from 'lucide-react';
 
-import { EMPLOYMENT_FORMS, fileUrl, type TaskStatus } from '@/lib/onboarding';
+import { DEFAULT_MEDICAL_CLINIC, EMPLOYMENT_FORMS, FIRST_DAY_CHECKLIST_ITEMS, apiUrl, fileUrl, formatStartDate, type MedicalClinicContent, type TaskStatus } from '@/lib/onboarding';
 import { useMe } from '@/lib/use-me';
 
 type NavSection =
@@ -48,6 +48,7 @@ type NavSection =
   | 'medical'
   | 'first_day'
   | 'privacy'
+  | 'history'
   | 'help';
 
 interface NavItem {
@@ -65,7 +66,8 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'medical', label: 'Medical', icon: Stethoscope },
   { id: 'first_day', label: 'First Day Preparation', icon: Briefcase },
   { id: 'privacy', label: 'Data Privacy', icon: Lock },
-  { id: 'help', label: 'Need Help', icon: HelpCircle },
+  { id: 'history', label: 'Submission History', icon: Clock },
+  { id: 'help', label: 'Chat Support', icon: HelpCircle },
 ];
 
 interface Milestone {
@@ -84,18 +86,20 @@ const MILESTONES: Milestone[] = [
   { id: 'privacy', step: 6, title: 'Privacy Policy', target: 'privacy' },
 ];
 
-const ORIENTATION_ITEMS: string[] = [
-  'HR Orientation',
-  'Administrative Orientation',
-  'Finance Orientation',
-  'IT Orientation',
-  'QMS Orientation',
-  'OSH Orientation',
-  'Reading of Employee Manual',
-  'Opening Payroll Account',
-  'Office Tour',
-  'Orientation with Immediate Superior',
-];
+const ORIENTATION_ITEMS: string[] = FIRST_DAY_CHECKLIST_ITEMS.map((item) => item.label);
+
+// Human titles for online form submissions (falls back to the raw form_type).
+const FORM_TITLES: Record<string, string> = {
+  'personal-data': 'Personal Data & Tax Information',
+  'data-privacy': 'Data Privacy Notice & Consent',
+  'manual-conforme': 'Employee Manual Conforme',
+  'id-conforme': 'Company ID Conforme',
+  'code-conduct': 'NK Code of Conduct',
+  comprehension: 'Comprehension Test',
+};
+for (const form of EMPLOYMENT_FORMS) FORM_TITLES[form.id] = form.title;
+
+const HISTORY_PAGE_SIZE = 10;
 
 const PRE_EMPLOYMENT_IDS = [
   'req-app-form',
@@ -160,6 +164,19 @@ interface ApiTaskFile {
   created_at: string;
 }
 
+interface ApiHistoryRow {
+  id: string;
+  item_kind: 'requirement' | 'form';
+  item_key: string;
+  item_label: string;
+  category: string;
+  file_name: string | null;
+  file_path: string | null;
+  action: 'upload' | 'remove';
+  file_present: number;
+  created_at: string;
+}
+
 interface SharedFileRow {
   slot: string;
   file_name: string;
@@ -203,7 +220,10 @@ interface Packet {
   employee: ApiEmployee;
   tasks: ApiTask[];
   files: ApiTaskFile[];
+  submissionHistory: ApiHistoryRow[];
   sharedFiles: SharedFileRow[];
+  firstDayChecks: { item_key: string; is_checked: number }[];
+  medicalClinic: MedicalClinicContent | null;
   notifications: ApiNotification[];
   unreadCount: number;
   threads: ApiThread[];
@@ -288,7 +308,7 @@ export default function EmployeeDashboardPage() {
 
   const loadPacket = async () => {
     try {
-      const res = await fetch('/api/me/packet', { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/me/packet'), { cache: 'no-store' });
       if (!res.ok) throw new Error();
       const data = (await res.json()) as Packet;
       setPacket(data);
@@ -316,15 +336,16 @@ export default function EmployeeDashboardPage() {
   }, [me]);
 
   // Auto mark-read: opening a section clears its unread alerts, no bell click needed.
+  // Chat is excluded: keyed chat rows clear only when their thread is opened.
   useEffect(() => {
     if (!me || !packet) return;
     const ids = (packet.notifications ?? [])
-      .filter((n) => !n.is_read && n.link_section === activeSection)
+      .filter((n) => !n.is_read && n.link_section === activeSection && (n.type !== 'chat' || !n.task_id))
       .map((n) => n.id);
     if (ids.length === 0) return;
     (async () => {
       try {
-        await fetch('/api/notifications', {
+        await fetch(apiUrl('/api/notifications'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids }),
@@ -355,10 +376,21 @@ export default function EmployeeDashboardPage() {
   // Header notifications dropdown
   const [notifOpen, setNotifOpen] = useState(false);
 
-  // First day orientation checklist progress (day-of tracker)
+  // First day orientation checklist progress (persisted per hire in first_day_checklist)
   const [orientationChecks, setOrientationChecks] = useState<boolean[]>(() =>
     Array(ORIENTATION_ITEMS.length).fill(false)
   );
+
+  // Hydrate checks from the server packet; each toggle below saves through the checks API.
+  useEffect(() => {
+    const checked = new Set(
+      (packet?.firstDayChecks ?? [])
+        .filter((row) => Number(row.is_checked) === 1)
+        .map((row) => String(row.item_key))
+    );
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOrientationChecks(FIRST_DAY_CHECKLIST_ITEMS.map((item) => checked.has(item.key)));
+  }, [packet]);
 
   // Section acknowledgements are derived from the checklist tasks (the only
   // database these sections touch). Section content itself is fully static.
@@ -368,6 +400,14 @@ export default function EmployeeDashboardPage() {
   const privacyAck = sectionDone('privacy');
   const medicalReviewed = sectionDone('medical');
 
+  // Employment forms unlock on the hire's start date (YYYY-MM-DD compare).
+  const todayKey = (() => {
+    const now = new Date();
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+  })();
+  const firstDayReached = employee ? employee.start_date <= todayKey : false;
+
   // Modals & Upload State
   const [uploadTask, setUploadTask] = useState<{ id: string; title: string; required: boolean } | null>(null);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
@@ -376,10 +416,10 @@ export default function EmployeeDashboardPage() {
   const [uploading, setUploading] = useState(false);
 
   // Files per requirement, derived from the server file list
-  const reqFiles = useMemo(() => {
-    const map: Record<string, { name: string; sizeLabel: string; path: string }[]> = {};
+  const reqFiles = useMemo(() => {    const map: Record<string, { id: string; name: string; sizeLabel: string; path: string }[]> = {};
     for (const f of packet?.files ?? []) {
       (map[f.task_id] = map[f.task_id] || []).push({
+        id: f.id,
         name: f.file_name,
         sizeLabel: formatFileSize(f.file_size),
         path: fileUrl(f.file_path),
@@ -387,6 +427,52 @@ export default function EmployeeDashboardPage() {
     }
     return map;
   }, [packet]);
+
+  interface HistoryRow {
+    key: string;
+    date: string;
+    item: string;
+    kind: string;
+    fileName: string | null;
+    files: { name: string; path: string }[];
+    removed: boolean;
+    uploaded: boolean;
+  }
+
+  // Every submission in one newest-first list: uploaded requirement files
+  // plus online form answers (whose attached files unpack from form_data).
+  const [historyPage, setHistoryPage] = useState(1);
+  // Permanent submission log, newest first. Rows survive file removal:
+  // removed files show their names without a download link.
+  const historyRows: HistoryRow[] = useMemo(() => {
+    const rows: HistoryRow[] = [];
+    for (const h of packet?.submissionHistory ?? []) {
+      const label =
+        h.item_kind === 'form' ? (FORM_TITLES[String(h.item_key)] ?? String(h.item_label)) : String(h.item_label);
+      const viewable = h.file_path != null && Number(h.file_present) === 1;
+      rows.push({
+        key: String(h.id),
+        date: String(h.created_at ?? ''),
+        item: label,
+        kind: h.item_kind === 'form' ? 'form' : String(h.category || 'document'),
+        fileName: h.file_name ? String(h.file_name) : null,
+        files:
+          h.file_name && viewable && h.file_path
+            ? [{ name: String(h.file_name), path: fileUrl(String(h.file_path)) }]
+            : [],
+        removed: h.action === 'remove' || (h.file_path != null && !viewable),
+        uploaded: h.action === 'upload',
+      });
+    }
+    return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [packet]);
+
+  const historyTotalPages = Math.max(1, Math.ceil(historyRows.length / HISTORY_PAGE_SIZE));
+  const historySafePage = Math.min(Math.max(1, historyPage), historyTotalPages);
+  const historyVisible = historyRows.slice(
+    (historySafePage - 1) * HISTORY_PAGE_SIZE,
+    historySafePage * HISTORY_PAGE_SIZE
+  );
 
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
 
@@ -408,6 +494,51 @@ export default function EmployeeDashboardPage() {
     [packet, activeThread]
   );
 
+  // Viewing a thread clears its chat notif: the bell keeps unread items only,
+  // always showing the latest message. Only an explicitly opened thread
+  // clears (legacy rows without a key clear too).
+  useEffect(() => {
+    if (!me || !packet || !activeThreadId) return;
+    const thread = helpThreads.find((t) => t.id === activeThreadId);
+    if (!thread) return;
+    const key = `thread:${thread.id}`;
+    const unread = (packet.notifications ?? []).filter((n) => !n.is_read && n.type === 'chat');
+    const ids = unread.filter((n) => n.task_id === key || !n.task_id).map((n) => n.id);
+    if (ids.length === 0) return;
+    const legacyIds = unread.filter((n) => !n.task_id).map((n) => n.id);
+    (async () => {
+      try {
+        await fetch(apiUrl('/api/notifications'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskKey: key }),
+        });
+        // Legacy rows carry no key, so clear them by id too — otherwise the
+        // next poll resurrects them as unread.
+        if (legacyIds.length > 0) {
+          await fetch(apiUrl('/api/notifications'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: legacyIds }),
+          });
+        }
+      } catch {
+        return;
+      }
+      setPacket((prev) =>
+        prev
+          ? {
+              ...prev,
+              notifications: prev.notifications.map((n) =>
+                ids.includes(n.id) ? { ...n, is_read: 1 } : n
+              ),
+              unreadCount: Math.max(0, prev.unreadCount - ids.length),
+            }
+          : prev
+      );
+    })();
+  }, [me, packet, activeThreadId, helpThreads]);
+
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [chatMessages, activeSection]);
@@ -420,7 +551,18 @@ export default function EmployeeDashboardPage() {
         .map((f) => ({ id: f.id, name: f.file_name, sizeLabel: formatFileSize(f.file_size), previewUrl: fileUrl(f.file_path) })),
     [packet]
   );
+  const photoTaskStatus = tasks.find((t) => t.id === 'req-photo')?.status ?? null;
   const [isDraggingPhoto, setIsDraggingPhoto] = useState(false);
+  const [isDraggingDoc, setIsDraggingDoc] = useState(false);
+  const docInputRef = useRef<HTMLInputElement | null>(null);
+
+  const addDocFiles = (picked: File[]) => {
+    if (picked.length === 0) return;
+    setUploadFiles((prev) => {
+      const known = new Set(prev.map((f) => `${f.name}-${f.size}-${f.lastModified}`));
+      return [...prev, ...picked.filter((f) => !known.has(`${f.name}-${f.size}-${f.lastModified}`))];
+    });
+  };
 
   // Personal data assistant inputs (submitted to HR, never prefilled)
   const [pdsData, setPdsData] = useState({
@@ -432,14 +574,30 @@ export default function EmployeeDashboardPage() {
     emergencyContact: '',
   });
 
-  // Check orientation gate
+  // Check orientation gate (server-side first-login flag; localStorage is this-browser cache only)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const watched = localStorage.getItem('pki_orientation_watched') === 'true';
-    if (!watched) {
-      router.replace('/orientation');
+    if (typeof window === 'undefined' || loading || loadError || !employee) return;
+    if (Number(employee.orientation_watched) === 1) {
+      try {
+        localStorage.setItem('pki_orientation_watched', 'true');
+      } catch {
+        /* private mode — server flag is what matters */
+      }
+      return;
     }
-  }, [router]);
+    let local = false;
+    try {
+      local = localStorage.getItem('pki_orientation_watched') === 'true';
+    } catch {
+      local = false;
+    }
+    if (local) {
+      // Watched under the old local-only system: backfill the server once.
+      void fetch(apiUrl('/api/me/orientation'), { method: 'POST' }).catch(() => undefined);
+      return;
+    }
+    router.replace('/orientation');
+  }, [router, loading, loadError, employee]);
 
   // Overall Progress Calculation
   const totalRequired = tasks.filter((t) => t.required === 1).length;
@@ -447,6 +605,9 @@ export default function EmployeeDashboardPage() {
   const progressPct = Math.round((approvedCount / (totalRequired || 1)) * 100);
 
   // Days left in the fixed onboarding window counted from account creation.
+  // Completed hires are exempt: the countdown disappears once everything
+  // is approved (the server also skips voiding them).
+  const isCompleted = !!employee && (Number(employee.completion_pct) >= 100 || employee.status === 'completed');
   const remainingDays = useMemo(() => {
     if (!employee) return null;
     const windowDays = Number(employee.access_window_days) || 30;
@@ -472,9 +633,38 @@ export default function EmployeeDashboardPage() {
   }, [packet]);
 
   const serverUnread = packet?.unreadCount ?? 0;
-  const unreadCount = useMemo(() => {
-    return hrAlerts.length + serverUnread;
-  }, [hrAlerts, serverUnread]);
+  // Bell dot reflects the notifications feed only. Rejection tasks stay
+  // visible in the dropdown as actionable rows, but viewing their section
+  // clears the feed item (auto mark-read effect above) so the dot vanishes.
+  const unreadCount = serverUnread;
+
+  // Opening the bell means the hire saw the feed: clear the dot at once.
+  const handleBellToggle = async () => {
+    if (notifOpen) {
+      setNotifOpen(false);
+      return;
+    }
+    setNotifOpen(true);
+    if ((packet?.unreadCount ?? 0) === 0) return;
+    try {
+      await fetch(apiUrl('/api/notifications'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+    } catch {
+      return;
+    }
+    setPacket((prev) =>
+      prev
+        ? {
+            ...prev,
+            notifications: prev.notifications.map((n) => ({ ...n, is_read: 1 })),
+            unreadCount: 0,
+          }
+        : prev
+    );
+  };
 
   const sharedBySlot = useMemo(() => {
     const map: Record<string, SharedFileRow> = {};
@@ -482,9 +672,12 @@ export default function EmployeeDashboardPage() {
     return map;
   }, [packet]);
 
+  // HR-saved clinic details for this hire; built-in defaults until HR edits.
+  const med = packet?.medicalClinic ?? DEFAULT_MEDICAL_CLINIC;
+
   const markNotifRead = async (id: number) => {
     try {
-      await fetch('/api/notifications', {
+      await fetch(apiUrl('/api/notifications'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id }),
@@ -546,8 +739,8 @@ export default function EmployeeDashboardPage() {
 
   const handleSignOut = async () => {
     setConfirmSignOut(false);
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
+    await fetch(apiUrl('/api/auth/logout'), { method: 'POST' });
+    router.push('/onboardingSys');
     router.refresh();
   };
 
@@ -584,6 +777,24 @@ export default function EmployeeDashboardPage() {
     }
   };
 
+  const handleRemoveUpload = async (taskId: string, fileId?: string) => {
+    setActionError('');
+    try {
+      const params = fileId ? `?fileId=${encodeURIComponent(fileId)}` : '';
+      const res = await fetch(apiUrl(`/api/tasks/${encodeURIComponent(taskId)}/submit${params}`), {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setActionError(data.error || 'Could not remove the file. Try again.');
+        return;
+      }
+      await loadPacket();
+    } catch {
+      setActionError('Could not reach the server. Try again.');
+    }
+  };
+
   const handleSendChat = async (e: React.SyntheticEvent) => {
     e.preventDefault();
     const text = chatInput.trim();
@@ -592,7 +803,7 @@ export default function EmployeeDashboardPage() {
     try {
       const threadId = activeThread && activeThread.status !== 'closed' ? activeThread.id : null;
       if (threadId) {
-        const res = await fetch(`/api/threads/${threadId}/messages`, {
+        const res = await fetch(apiUrl(`/api/threads/${threadId}/messages`), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ body: text }),
@@ -600,7 +811,7 @@ export default function EmployeeDashboardPage() {
         if (!res.ok) throw new Error();
         setActiveThreadId(threadId);
       } else {
-        const res = await fetch('/api/threads', {
+        const res = await fetch(apiUrl('/api/threads'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -638,7 +849,7 @@ export default function EmployeeDashboardPage() {
     try {
       const payload = new FormData();
       for (const f of valid) payload.append('files', f);
-      const res = await fetch('/api/tasks/req-photo/submit', { method: 'POST', body: payload });
+      const res = await fetch(apiUrl('/api/tasks/req-photo/submit'), { method: 'POST', body: payload });
       const data = await res.json();
       if (!res.ok) {
         setActionError(data.error || 'Photo upload failed.');
@@ -653,7 +864,7 @@ export default function EmployeeDashboardPage() {
   const handleMedicalReviewed = async () => {
     setActionError('');
     try {
-      const res = await fetch('/api/me/medical', { method: 'POST' });
+      const res = await fetch(apiUrl('/api/me/medical'), { method: 'POST' });
       if (!res.ok) throw new Error();
       await loadPacket();
     } catch {
@@ -664,7 +875,7 @@ export default function EmployeeDashboardPage() {
   const handleFirstDayReady = async () => {
     setActionError('');
     try {
-      const res = await fetch('/api/me/firstday', { method: 'POST' });
+      const res = await fetch(apiUrl('/api/me/firstday'), { method: 'POST' });
       if (!res.ok) throw new Error();
       await loadPacket();
     } catch {
@@ -672,10 +883,30 @@ export default function EmployeeDashboardPage() {
     }
   };
 
+  const handleOrientationToggle = async (idx: number) => {
+    const item = FIRST_DAY_CHECKLIST_ITEMS[idx];
+    if (!item) return;
+    const next = !(orientationChecks[idx] ?? false);
+    setOrientationChecks((prev) => prev.map((v, i) => (i === idx ? next : v)));
+    setActionError('');
+    try {
+      const res = await fetch(apiUrl('/api/me/firstday/checks'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_key: item.key, checked: next }),
+      });
+      if (!res.ok) throw new Error();
+      await loadPacket();
+    } catch {
+      setOrientationChecks((prev) => prev.map((v, i) => (i === idx ? !next : v)));
+      setActionError('Could not save the checklist. Check your connection and try again.');
+    }
+  };
+
   const handlePrivacyAck = async () => {
     setActionError('');
     try {
-      const res = await fetch('/api/privacy/ack', { method: 'POST' });
+      const res = await fetch(apiUrl('/api/privacy/ack'), { method: 'POST' });
       const data = await res.json();
       if (!res.ok) {
         setActionError(data.error || 'Could not save acknowledgement.');
@@ -691,7 +922,7 @@ export default function EmployeeDashboardPage() {
     e.preventDefault();
     setActionError('');
     try {
-      const res = await fetch('/api/forms/submit', {
+      const res = await fetch(apiUrl('/api/forms/submit'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ formType: 'personal-data', formData: pdsData }),
@@ -751,7 +982,7 @@ export default function EmployeeDashboardPage() {
               </button>
               {/* Desktop logo */}
               <Image
-                src="/PKII-LOGO.png"
+                src={apiUrl('/PKII-LOGO.png')}
                 alt="Philkoei International, Inc."
                 width={180}
                 height={44}
@@ -760,7 +991,7 @@ export default function EmployeeDashboardPage() {
               />
               {/* Mobile logo */}
               <Image
-                src="/PKII-LOGO1.png"
+                src={apiUrl('/PKII-LOGO1.png')}
                 alt="Philkoei International, Inc."
                 width={120}
                 height={44}
@@ -775,7 +1006,7 @@ export default function EmployeeDashboardPage() {
               <div className="relative shrink-0">
                 <button
                   type="button"
-                  onClick={() => setNotifOpen((v) => !v)}
+                  onClick={() => void handleBellToggle()}
                   aria-expanded={notifOpen}
                   aria-label="Open notifications"
                   className="relative inline-flex items-center justify-center min-w-11 min-h-11 rounded-xl text-[#03396c] hover:bg-[#eaf2f8] transition-colors"
@@ -878,10 +1109,11 @@ export default function EmployeeDashboardPage() {
                 <div className="w-6 h-6 sm:w-8 sm:h-8 rounded-full overflow-hidden border border-[#b3cde0] shrink-0 bg-[#005b96] flex items-center justify-center text-[10px] font-bold text-white">
                   {employee.avatar_url ? (
                     <Image
-                      src={employee.avatar_url}
+                      src={fileUrl(employee.avatar_url)}
                       alt={employee.full_name}
                       width={32}
                       height={32}
+                      unoptimized
                       className="w-full h-full object-cover"
                     />
                   ) : (
@@ -893,14 +1125,25 @@ export default function EmployeeDashboardPage() {
                     {employee.full_name}
                   </div>
                   <div className="flex items-center gap-1 mt-0.5 min-w-0">
-                    <Hourglass className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-500 animate-pulse shrink-0" />
-                    <span className="text-[9px] sm:text-[10px] font-semibold text-amber-600 whitespace-nowrap truncate leading-tight">
-                      {remainingDays === null
-                        ? 'Loading...'
-                        : remainingDays > 0
-                          ? `${remainingDays} days remaining`
-                          : 'Access window closed'}
-                    </span>
+                    {isCompleted ? (
+                      <>
+                        <CheckCircle2 className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-emerald-500 shrink-0" />
+                        <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-600 whitespace-nowrap truncate leading-tight">
+                          Completed
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <Hourglass className="w-2.5 h-2.5 sm:w-3 sm:h-3 text-amber-500 animate-pulse shrink-0" />
+                        <span className="text-[9px] sm:text-[10px] font-semibold text-amber-600 whitespace-nowrap truncate leading-tight">
+                          {remainingDays === null
+                            ? 'Loading...'
+                            : remainingDays > 0
+                              ? `${remainingDays} days remaining`
+                              : 'Access window closed'}
+                        </span>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
@@ -950,7 +1193,7 @@ export default function EmployeeDashboardPage() {
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#e2e8f0]">
               <div className="flex items-center gap-2">
                 <Image
-                  src="/PKII-LOGO1.png"
+                  src={apiUrl('/PKII-LOGO1.png')}
                   alt="Philkoei International, Inc."
                   width={100}
                   height={36}
@@ -1218,16 +1461,31 @@ export default function EmployeeDashboardPage() {
                           {(reqFiles[req.id] ?? []).length > 0 && (
                             <div className="flex flex-wrap gap-1.5 pt-1">
                               {(reqFiles[req.id] ?? []).map((f) => (
-                                <a
-                                  key={`${req.id}-${f.name}`}
-                                  href={f.path}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-xs text-[#005b96] font-semibold bg-[#eaf2f8] px-2.5 py-1 rounded-md max-w-full hover:underline"
+                                <span
+                                  key={`${req.id}-${f.id}`}
+                                  className="inline-flex items-center gap-1 text-xs text-[#005b96] font-semibold bg-[#eaf2f8] pl-2.5 pr-1 py-1 rounded-md max-w-full"
                                 >
-                                  <FileCheck className="w-3.5 h-3.5 shrink-0" />
-                                  <span className="truncate max-w-[140px] min-[420px]:max-w-[200px]">{f.name}</span>
-                                </a>
+                                  <a
+                                    href={f.path}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center gap-1.5 max-w-full hover:underline"
+                                  >
+                                    <FileCheck className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="truncate max-w-[140px] min-[420px]:max-w-[200px]">{f.name}</span>
+                                  </a>
+                                  {req.status !== 'approved' && (
+                                    <button
+                                      type="button"
+                                      onClick={() => void handleRemoveUpload(req.id, f.id)}
+                                      aria-label={`Remove ${f.name}`}
+                                      title="Remove this file"
+                                      className="p-1 rounded-md text-[#6497b1] hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </span>
                               ))}
                             </div>
                           )}
@@ -1303,10 +1561,11 @@ export default function EmployeeDashboardPage() {
                       <div className="w-24 h-24 sm:w-28 sm:h-28 rounded-full overflow-hidden border-4 border-white shadow-md bg-[#005b96] ring-2 ring-[#b3cde0] flex items-center justify-center text-2xl font-extrabold text-white">
                         {employee.avatar_url ? (
                           <Image
-                            src={employee.avatar_url}
+                            src={fileUrl(employee.avatar_url)}
                             alt={employee.full_name}
                             width={112}
                             height={112}
+                            unoptimized
                             className="w-full h-full object-cover"
                             priority
                           />
@@ -1402,7 +1661,7 @@ export default function EmployeeDashboardPage() {
                     <li>Please complete all sections as soon as possible</li>
                     <li>Some sections will be locked until your starting date</li>
                     <li>You will receive notifications when HR reviews your submissions</li>
-                    <li>If you need help at any time, visit the Need Help section</li>
+                    <li>If you need help at any time, visit the Chat Support section</li>
                   </ul>
                 </div>
               </div>
@@ -1420,6 +1679,21 @@ export default function EmployeeDashboardPage() {
                   </p>
                 </div>
 
+                {!firstDayReached ? (
+                  <div className="bg-white rounded-2xl border border-[#e2e8f0] p-8 sm:p-10 shadow-sm text-center space-y-3">
+                    <div className="w-12 h-12 rounded-2xl bg-[#eaf2f8] flex items-center justify-center mx-auto">
+                      <Lock className="w-6 h-6 text-[#005b96]" />
+                    </div>
+                    <h2 className="text-base sm:text-lg font-bold text-[#011f4b]">
+                      Available on your first day
+                    </h2>
+                    <p className="text-xs sm:text-sm text-[#6497b1] leading-relaxed max-w-md mx-auto">
+                      These forms unlock on {employee ? formatStartDate(employee.start_date) : 'your start date'}.
+                      Come back then to download, complete, and upload them.
+                    </p>
+                  </div>
+                ) : (
+                <>
                 <div className="space-y-3 sm:space-y-4">
                   {EMPLOYMENT_FORMS.map((formItem) => {
                     const shared = sharedBySlot[formItem.id];
@@ -1488,6 +1762,8 @@ export default function EmployeeDashboardPage() {
                 <p className="text-[11px] sm:text-xs text-[#6497b1] leading-relaxed bg-[#f8fafc] border border-[#e2e8f0] rounded-xl px-4 py-3">
                   Note: All forms must be editable PDFs. Please ensure they are completely filled out before uploading.
                 </p>
+                </>
+                )}
               </div>
             )}
 
@@ -1507,7 +1783,7 @@ export default function EmployeeDashboardPage() {
                     <div className="bg-white rounded-2xl border border-[#e2e8f0] p-3 shadow-sm overflow-hidden">
                       <div className="rounded-xl overflow-hidden bg-slate-200">
                         <Image
-                          src="/Sample Photo for Corporate ID.png"
+                          src={apiUrl('/Sample Photo for Corporate ID.png')}
                           alt="Sample professional ID photo reference"
                           width={800}
                           height={800}
@@ -1593,6 +1869,17 @@ export default function EmployeeDashboardPage() {
                               >
                                 <Download className="w-4 h-4" />
                               </a>
+                              {photoTaskStatus !== 'approved' && (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleRemoveUpload('req-photo', photo.id)}
+                                  aria-label={`Remove ${photo.name}`}
+                                  title="Remove this photo"
+                                  className="p-2 rounded-lg text-[#6497b1] hover:text-rose-600 hover:bg-rose-50 transition-colors shrink-0"
+                                >
+                                  <X className="w-4 h-4" />
+                                </button>
+                              )}
                             </div>
                           ))}
                         </div>
@@ -1651,17 +1938,17 @@ export default function EmployeeDashboardPage() {
                     <div className="flex items-start gap-2">
                       <MapPin className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
                       <p className="text-[#03396c]">
-                        <span className="font-bold text-[#011f4b]">Clinica Manila</span>
-                        {' at SM Center Pasig, E. Rodriguez Jr. Ave corner Dona Julia Vargas Ave., Frontera Verde, Ortigas Center, Pasig, 1604 Metro Manila.'}
+                        <span className="font-bold text-[#011f4b]">{med.clinicName}</span>{' '}
+                        {med.clinicAddress}
                       </p>
                     </div>
                     <div className="flex items-start gap-2">
                       <Phone className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
-                      <p className="text-[#03396c]">(02) 8696 7055</p>
+                      <p className="text-[#03396c]">{med.clinicPhone}</p>
                     </div>
                     <div className="flex items-start gap-2">
                       <Clock className="w-4 h-4 text-[#005b96] shrink-0 mt-0.5" />
-                      <p className="text-[#03396c]">Monday to Saturday: 8:00 AM – 6:00 PM</p>
+                      <p className="text-[#03396c]">{med.clinicHours}</p>
                     </div>
                   </div>
                 </div>
@@ -1854,11 +2141,7 @@ export default function EmployeeDashboardPage() {
                           type="button"
                           role="checkbox"
                           aria-checked={checked}
-                          onClick={() =>
-                            setOrientationChecks((prev) =>
-                              prev.map((v, i) => (i === idx ? !v : v))
-                            )
-                          }
+                          onClick={() => void handleOrientationToggle(idx)}
                           className={`w-full flex items-center gap-3 p-3 rounded-xl border text-left transition-colors min-h-11 ${
                             checked
                               ? 'bg-emerald-50/60 border-emerald-200'
@@ -2089,7 +2372,144 @@ export default function EmployeeDashboardPage() {
               </div>
             )}
 
-            {/* SECTION: Need Help (HR Chat) */}
+            {/* SECTION: Submission History */}
+            {activeSection === 'history' && (
+              <div className="space-y-4 sm:space-y-5">
+                <div>
+                  <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-[#011f4b] leading-tight">
+                    Submission History
+                  </h1>
+                  <p className="text-xs sm:text-sm text-[#6497b1] mt-1 leading-relaxed">
+                    Everything submitted so far, newest first. Open any file to view it.
+                  </p>
+                </div>
+
+                {historyRows.length === 0 ? (
+                  <div className="bg-white rounded-2xl border border-[#e2e8f0] p-8 sm:p-10 shadow-sm text-center">
+                    <p className="text-sm font-bold text-[#011f4b]">No submissions yet</p>
+                    <p className="text-xs text-[#6497b1] mt-1 leading-relaxed">
+                      Uploaded documents and submitted forms appear here.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs sm:text-sm min-w-[640px]">
+                        <thead>
+                          <tr className="bg-[#f8fafc] border-b border-[#e2e8f0] text-left">
+                            <th className="px-4 py-3 font-bold text-[#03396c] whitespace-nowrap">Date</th>
+                            <th className="px-4 py-3 font-bold text-[#03396c]">Item</th>
+                            <th className="px-4 py-3 font-bold text-[#03396c] whitespace-nowrap">Type</th>
+                            <th className="px-4 py-3 font-bold text-[#03396c]">File</th>
+                            <th className="px-4 py-3 font-bold text-[#03396c] whitespace-nowrap">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#f1f5f9]">
+                          {historyVisible.map((row) => (
+                            <tr key={row.key} className="hover:bg-[#f8fafc]/60 transition-colors">
+                              <td className="px-4 py-3 text-[#03396c] whitespace-nowrap tabular-nums">
+                                {row.date ? row.date.slice(0, 16).replace('T', ' ') : '—'}
+                              </td>
+                              <td className="px-4 py-3 font-semibold text-[#011f4b] leading-snug">{row.item}</td>
+                              <td className="px-4 py-3 text-[#6497b1] whitespace-nowrap capitalize">
+                                {row.kind.replace(/_/g, ' ')}
+                              </td>
+                              <td className="px-4 py-3">
+                                {row.files.length === 0 ? (
+                                  row.fileName ? (
+                                    <span className="text-xs text-[#6497b1]">
+                                      {row.fileName}{' '}
+                                      <span className="italic">(removed, no longer viewable)</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[#6497b1] italic">Online answers, no file</span>
+                                  )
+                                ) : (
+                                  <span className="flex flex-col gap-1">
+                                    {row.files.map((f) => (
+                                      <a
+                                        key={`${row.key}-${f.name}`}
+                                        href={f.path}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex items-center gap-1.5 text-[#005b96] font-semibold hover:underline max-w-[220px]"
+                                      >
+                                        <Eye className="w-3.5 h-3.5 shrink-0" />
+                                        <span className="truncate">{f.name}</span>
+                                      </a>
+                                    ))}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-4 py-3 whitespace-nowrap">
+                                {row.removed ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+                                    Removed
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <Check className="w-3 h-3 text-emerald-600" />
+                                    Submitted
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 border-t border-[#e2e8f0] bg-[#f8fafc]">
+                      <span className="text-[11px] sm:text-xs text-[#6497b1] tabular-nums">
+                        Showing{' '}
+                        {historyRows.length === 0
+                          ? 0
+                          : (historySafePage - 1) * HISTORY_PAGE_SIZE + 1}
+                        –
+                        {Math.min(historySafePage * HISTORY_PAGE_SIZE, historyRows.length)} of{' '}
+                        {historyRows.length}
+                      </span>
+                      {historyTotalPages > 1 && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setHistoryPage(historySafePage - 1)}
+                            disabled={historySafePage <= 1}
+                            className="px-3 py-2 text-xs font-bold text-[#005b96] bg-white border border-[#b3cde0] rounded-lg disabled:opacity-40 hover:bg-[#eaf2f8] transition-colors min-h-11"
+                          >
+                            Prev
+                          </button>
+                          {Array.from({ length: historyTotalPages }, (_, i) => i + 1).map((p) => (
+                            <button
+                              key={p}
+                              type="button"
+                              onClick={() => setHistoryPage(p)}
+                              aria-label={`Page ${p}`}
+                              className={`min-w-11 min-h-11 px-3 py-2 text-xs font-bold rounded-lg transition-colors tabular-nums ${
+                                p === historySafePage
+                                  ? 'bg-[#005b96] text-white'
+                                  : 'bg-white border border-[#b3cde0] text-[#005b96] hover:bg-[#eaf2f8]'
+                              }`}
+                            >
+                              {p}
+                            </button>
+                          ))}
+                          <button
+                            type="button"
+                            onClick={() => setHistoryPage(historySafePage + 1)}
+                            disabled={historySafePage >= historyTotalPages}
+                            className="px-3 py-2 text-xs font-bold text-[#005b96] bg-white border border-[#b3cde0] rounded-lg disabled:opacity-40 hover:bg-[#eaf2f8] transition-colors min-h-11"
+                          >
+                            Next
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* SECTION: Chat Support (HR Chat) */}
             {activeSection === 'help' && (
               <div className="bg-white rounded-2xl border border-[#e2e8f0] shadow-sm overflow-hidden flex flex-col">
                 {/* Chat Header */}
@@ -2298,11 +2718,12 @@ export default function EmployeeDashboardPage() {
                 </span>
               </div>
               <button
-                onClick={() => {
-                  setUploadTask(null);
-                  setUploadFiles([]);
-                  setUploadError('');
-                }}
+                  onClick={() => {
+                    setUploadTask(null);
+                    setUploadFiles([]);
+                    setUploadError('');
+                    setIsDraggingDoc(false);
+                  }}
                 className="text-[#6497b1] hover:text-[#011f4b]"
                 aria-label="Close upload"
               >
@@ -2336,20 +2757,39 @@ export default function EmployeeDashboardPage() {
                 }}
                 className="space-y-4"
               >
-                <div className="border-2 border-dashed border-[#b3cde0] hover:border-[#005b96] rounded-xl p-6 text-center bg-[#f8fafc] cursor-pointer">
+                <div
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDraggingDoc(true);
+                  }}
+                  onDragLeave={() => setIsDraggingDoc(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDraggingDoc(false);
+                    addDocFiles(Array.from(e.dataTransfer.files));
+                  }}
+                  onClick={(e) => {
+                    const tag = (e.target as HTMLElement).tagName;
+                    if (tag !== 'INPUT' && tag !== 'BUTTON') docInputRef.current?.click();
+                  }}
+                  className={`border-2 border-dashed rounded-xl p-6 text-center bg-[#f8fafc] cursor-pointer transition-colors ${
+                    isDraggingDoc ? 'border-[#005b96] bg-[#eaf2f8]' : 'border-[#b3cde0] hover:border-[#005b96]'
+                  }`}
+                >
                   <input
+                    ref={docInputRef}
                     type="file"
                     multiple
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.ppt,.pptx"
                     onChange={(e) => {
-                      if (e.target.files) {
-                        setUploadFiles((prev) => [...prev, ...Array.from(e.target.files ?? [])]);
-                        e.target.value = '';
-                      }
+                      const picked = Array.from(e.currentTarget.files ?? []);
+                      e.currentTarget.value = '';
+                      addDocFiles(picked);
                     }}
                     className="w-full text-xs text-[#6497b1] file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-[#005b96] file:text-white hover:file:bg-[#03396c]"
                   />
                   <div className="text-[11px] text-[#6497b1] mt-2">
-                    Supported formats: PDF, JPG, PNG (Max 10MB each, multiple files allowed)
+                    Click to browse or drag and drop here. Supported formats: PDF, JPG, PNG (Max 10MB each, multiple files allowed)
                   </div>
                 </div>
 

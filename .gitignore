@@ -40,5 +40,6 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# uploaded employee/HR files (live user data, never committed)
-/public/uploads/*
+# uploaded employee/HR files (live user data, never committed; outside
+# public/ so files never serve without a login — see lib/server-db.ts)
+storage/uploads/*

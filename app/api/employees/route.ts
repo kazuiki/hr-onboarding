@@ -1,5 +1,6 @@
 import { query, transaction, newId, auditEvent, notifyUser, type Row } from '@/lib/server-db';
-import { getSessionUser, isHr, jsonError } from '@/lib/auth';
+import { getSessionUser, isHr, isHrManager, jsonError } from '@/lib/auth';
+import { hashPassword } from '@/lib/password';
 import { DEFAULT_REQUIREMENTS } from '@/lib/onboarding';
 
 async function setting(key: string): Promise<string | null> {
@@ -56,7 +57,7 @@ interface CreateBody {
 /** HR: invite a hire — creates login, profile, packet and all tasks. */
 export async function POST(req: Request) {
   const user = await getSessionUser();
-  if (!user || !isHr(user.role)) return jsonError('HR sign-in required.', 403);
+  if (!user || !isHrManager(user.role)) return jsonError('HR manager sign-in required.', 403);
 
   let body: CreateBody;
   try {
@@ -93,8 +94,8 @@ export async function POST(req: Request) {
   await transaction(async (q) => {
     await q(
       `INSERT INTO users (id, email, password_hash, role, full_name)
-       VALUES (?, ?, SHA2(?, 256), 'employee', ?)`,
-      [userId, email, tempPassword, fullName]
+       VALUES (?, ?, ?, 'employee', ?)`,
+      [userId, email, await hashPassword(tempPassword), fullName]
     );
     await q(
       `INSERT INTO employees (id, employee_number, position, department, manager_name,

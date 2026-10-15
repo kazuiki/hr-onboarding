@@ -12,34 +12,21 @@
 -- packet from the template below. That keeps every record genuine.
 --
 -- FIRST LOGIN:  hr.admin@philkoei.com.ph / ChangeMe123!
--- Then immediately: UPDATE users SET password_hash = SHA2('your-new-password', 256)
---                   WHERE email = 'hr.admin@philkoei.com.ph';
+-- Change it immediately after first sign-in.
 -- =====================================================================
 USE hr_onboarding;
 
 -- --- HR administrator (temp credentials, change immediately) ---
+-- password_hash below is scrypt('ChangeMe123!'); generate new ones with the app.
 INSERT INTO users (id, email, password_hash, role, full_name) VALUES
 ('00000000-0000-0000-0000-000000000001', 'hr.admin@philkoei.com.ph',
- SHA2('ChangeMe123!', 256), 'hr_manager', 'HR Administrator');
+ 'scrypt$822e4dbf067a295e41c6f27286a728e4$c6b62a745fbfce922963183dbbd1fd4e40d3d14337625e70974075981fd6f1944f15a32ff41d1ede7508810956b54c04630d03bab40699440a1b258e60aea188', 'hr_manager', 'HR Administrator');
 
 -- --- Company configuration ---
+-- Only keys the app actually reads are seeded. (Retired display-only keys
+-- were pruned; see 31_prune_company_settings.sql for existing databases.)
 INSERT INTO company_settings (setting_key, value_text, description) VALUES
-('company_name', 'Philkoei International, Inc.', 'Brand name in header and welcome banner'),
-('hq_office_name', 'Philkoei International Corporate Headquarters', 'First-day reporting office'),
-('hq_office_address', '15th Floor, The Enterprise Center Tower 1, 6766 Ayala Avenue, Makati City, Metro Manila', 'First-day address'),
-('hq_map_instructions', 'Enter via Paseo de Roxas or Ayala Avenue entrance. Take the High-Zone elevator bank to Floor 15.', 'First-day map hint'),
-('default_arrival_time', '8:00 AM Sharp (PHT)', 'Default arrival seeded into first-day guides'),
-('default_dress_code', 'Smart-Casual (collared shirts, slacks/chinos, closed-toe shoes; no slippers or distressed denim)', 'Default dress code'),
-('default_reporting_to', 'HR People and Culture Department, 15th Floor Reception', 'Default reporting contact'),
-('hr_contact_name', 'HR People and Culture Department', 'Need-Help contact'),
-('hr_contact_email', 'hr@philkoei.com.ph', 'Need-Help email'),
-('hr_contact_phone', '+63 2 8812 3456', 'Need-Help phone'),
 ('default_access_window_days', '30', 'Default onboarding window around the start date');
-
-INSERT INTO company_settings (setting_key, value_json, description) VALUES
-('default_items_to_bring',
- JSON_ARRAY('Original Government Valid IDs', 'Original Physical NBI Clearance Certificate', 'Bank Account Details for Payroll Authorization', 'Signed Physical Employment Contract Copy'),
- 'Default what-to-bring list');
 
 -- --- Standard onboarding template ---
 INSERT INTO onboarding_templates (id, name, description, department, is_active, created_by) VALUES

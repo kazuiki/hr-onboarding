@@ -1,0 +1,103 @@
+Gandalf Notes - ROUTE Project (simple lang)
+Galing sa: check/ROUTE ROBO RESEARCH.pdf
+Date: Oct 2026
+Sino: Narte, Matutis, Romero - Grade 11, Rizal National Science High School
+Time: Sept to Dec 2026 (17 weeks)
+Budget: P21,500
+
+ANO YUNG PROJECT:
+App siya para sa jeep, trike, UV. Gusto ayusin 3 problema: walang mapa yung mga ganung sakay, nalilito sa pamasahe lalo na turista, at nakakalito lumipat.
+May 5 features: AI search galing blogs, fare calculator, peso to dollar, landmark guide (hal. "lakad ka 150m lagpas Mercury, tawid footbridge"), at OCR pang-scan ng karatula.
+
+HATOL: PANG-PROTOTYPE LANG MUNA, WAG PANG-BUONG BANSA
+Okay yung idea. Pero ang laki niya, parang 3-4 projects pinagsama.
+Para umabot sa Dec, kailangan liitan.
+
+MALAKAS DITO (wag tanggalin):
+1. Totoo yung problema. Wala talagang mapa yung trike at jeep. Dito sablay yung SmartTransit PH at OpenTripPlanner, kaya may laban kayo.
+2. Okay yung combo: landmark + presyo + 20% discount + OCR sa isang app. Wala nito sa 10 papers na binanggit nyo.
+3. Tama yung lalapitan: LGU, LTFRB, OSM, TODA. Sila may alam ng totoong ruta at presyo.
+4. Sakto lang yung P21,500 pang-prototype.
+
+BAWASAN MUNA:
+1. Tokyo Metro: wag muna. Di natin ma-test, taga-Binangonan tayo. 1-2 ruta lang muna, hal. Binangonan to Angono.
+2. Wag 5 users agad. 2 lang muna: yung araw-araw sumasakay at baguhan. Yung foreign tourist, next time na.
+3. AI galing blogs: delikado. Paiba-iba landmark (hal. "asul na waiting shed"), baka mag-imbento si AI. Mas okay mag-ikot muna at magtanong sa TODA, tapos OSM. AI gamitin lang sa sarili nating data.
+4. OCR: demo lang muna. Mahirap pag gabi at sulat-kamay, lalo pag gumagalaw.
+5. Live forex na P1,500: wag bumili. Table lang ng BSP, update weekly, o libreng API.
+
+DAGDAG DAPAT:
+1. Tables muna: routes, stops, landmarks, fares. Mamili: Firebase (nasa proposal) o Supabase. Pag wala to, di gagana.
+2. Test plan: kulang sa paper. Mag-test sa 30 tao. Sukat: nakarating ba, tama ba presyo, nakatipid ba oras.
+3. Offline: mahina signal sa labas. Dapat may saved na ruta kahit walang net.
+4. Wag sabihin bagong algorithm. May 10 kaparehong patent na kayo mismo naglista. Sabihin na lang bagong combo para sa Pinas.
+5. Tipid sa Maps: ubos agad P3,000 sa Mapbox/Google. OSM muna na libre, saka na paganda.
+
+---
+ANO KAYA GAWIN NILANG TATLO
+
+Kaya nila:
+1. Field work: sumakay talaga, kausapin TODA, ilista stops, landmark, presyo. Eto pinaka-importante, sila lang makakagawa.
+2. Encode: Excel muna tapos lipat sa Firebase/Supabase.
+3. Simple app: search, mapa, presyo. Kaya sa Flutter o website app + OSM. Di kailangan AI dito.
+4. Fare math: base + per km, tapos less 20% pag student/senior/PWD. Basic code lang.
+5. Test + paper: 30 users, video demo, final paper.
+
+Mahirap sa 17 weeks:
+1. Sariling AI galing internet: mahal, mahirap, baka mag-imbento.
+2. Real-time OCR sa gabi: pang-lab yan.
+3. Pang-buong Pinas na system: pang-engineers yan.
+4. Tokyo: walang data.
+
+Hati:
+- Isa 1: data + backend, siya sa tables at fare logic.
+- Isa 2: frontend + mapa, siya sa design at mapa.
+- Isa 3: test + docs, siya sa OCR demo, currency, 30-user test.
+- Mentor: check at tulong sa LGU/LTFRB.
+
+---
+ILAN KAILANGAN
+
+Kung 2 ruta lang: sapat na yung 3. Sakto sila, di na kailangan hire.
+
+Kung bubuuin lahat pati Tokyo at live AI: kailangan 5-6 katao:
+1. pang-mobile
+2. pang-backend/GIS
+3. pang-AI
+4. pang-camera/OCR
+5. pang-test
+6. pang-manage/paper
+Di kaya bago Dec. Kaya MVP muna.
+
+---
+PINAKAMADALING PARAAN
+
+Rule: manual muna bago AI. Fare muna bago OCR.
+
+Para makatipid:
+1. Mapa: OSM + Leaflet libre. Wag muna Mapbox.
+2. DB: Firebase pwede, pero mas okay Supabase libre sa umpisa.
+3. Fare: code lang, walang bayad.
+4. OCR: ML Kit libre sa phone, wag yung P2,000.
+5. Forex: BSP table lang, wag yung P1,500.
+6. AI na P4,500: sa huli na gastusin pag may app na. Libre muna.
+7. Offline: save yung 2 ruta sa phone.
+
+Plan:
+Weeks 1-5: ikutin 2 ruta, kunin presyo sa LTFRB/TODA, lagay sa OSM.
+Weeks 6-10: gawin fare + discount + landmark text. Wala munang AI.
+Weeks 11-14: saka AI sa sarili nating data + OCR demo + peso-dollar.
+Weeks 15-17: test sa 30 tao + sulat paper.
+
+Sa P21,500:
+Unahin yung pang-ikot (P3,500) at pang-test load (P3,000). Yung pang-API sa huli na pag may gumagana na.
+
+LAST:
+1. 2 ruta, 2 users, 1 lugar lang.
+2. Manual muna.
+3. Fare muna.
+4. Wag sabay-sabay code at test.
+5. 3 tao kasya basta may hati.
+6. Wag claim na bagong algorithm. Bagong combo lang.
+
+Next: gawin mapa ng 2 ruta, tapos fare calculator.

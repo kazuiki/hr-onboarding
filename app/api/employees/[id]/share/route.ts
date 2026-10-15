@@ -1,8 +1,6 @@
 import { unlink } from 'fs/promises';
-import path from 'path';
-import { query, newId, auditEvent, notifyUser, type Row } from '@/lib/server-db';
-import { saveUpload } from '@/lib/server-db';
-import { getSessionUser, isHr, jsonError } from '@/lib/auth';
+import { query, newId, auditEvent, notifySingle, saveUpload, diskPathForUpload, fileSignatureOk, type Row } from '@/lib/server-db';
+import { getSessionUser, isHrManager, jsonError } from '@/lib/auth';
 import { UPLOAD_DOC_TYPES } from '@/lib/onboarding';
 
 interface Ctx {
@@ -15,7 +13,7 @@ const ALLOWED_EXT = ['pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'ppt', 'pptx'];
 /** HR: share a company file — attaches to a requirement or fills a slot. */
 export async function POST(req: Request, ctx: Ctx) {
   const user = await getSessionUser();
-  if (!user || !isHr(user.role)) return jsonError('HR sign-in required.', 403);
+  if (!user || !isHrManager(user.role)) return jsonError('HR manager sign-in required.', 403);
   const { id: employeeId } = await ctx.params;
 
   const exists = await query(`SELECT id FROM employees WHERE id = ?`, [employeeId]);
@@ -32,6 +30,8 @@ export async function POST(req: Request, ctx: Ctx) {
   const ext = (file.name.split('.').pop() || '').toLowerCase();
   if (!ALLOWED_EXT.includes(ext)) return jsonError('File type not allowed. Use PDF, DOC, DOCX, JPG, PNG or PPT.');
   if (file.size > MAX_BYTES) return jsonError('File exceeds the 10MB limit.');
+  const head = new Uint8Array(await file.arrayBuffer());
+  if (!fileSignatureOk(file.name, head)) return jsonError('File content does not match its file type.');
 
   const saved = await saveUpload(file, employeeId);
   const target = docType.target;
@@ -48,13 +48,13 @@ export async function POST(req: Request, ctx: Ctx) {
        WHERE id = ? AND employee_id = ?`,
       [saved.fileName, saved.filePath, match[0].id, employeeId]
     );
-    await notifyUser({
+    await notifySingle({
       userId: employeeId,
       type: 'general',
       title: `New downloadable file: ${match[0].title}.`,
       body: notes || 'HR shared a new document with you.',
       linkSection: 'pre_employment',
-      taskId: String(match[0].id),
+      dedupeKey: `shared:task:${match[0].id}`,
     });
     await auditEvent({
       actorId: user.id,
@@ -76,13 +76,13 @@ export async function POST(req: Request, ctx: Ctx) {
        uploaded_by = VALUES(uploaded_by), updated_at = NOW()`,
     [newId(), employeeId, target.slot, saved.fileName, saved.filePath, saved.fileSize, saved.mimeType, notes || null, user.id]
   );
-  await notifyUser({
+  await notifySingle({
     userId: employeeId,
     type: 'general',
     title: `New downloadable file: ${docType.label}.`,
     body: notes || 'HR shared a new document with you.',
     linkSection: target.section,
-    taskId: target.slot,
+    dedupeKey: `shared:slot:${target.slot}`,
   });
   await auditEvent({
     actorId: user.id,
@@ -99,7 +99,7 @@ export async function POST(req: Request, ctx: Ctx) {
 /** HR: remove a shared slot file (its Download button greys again). */
 export async function DELETE(req: Request, ctx: Ctx) {
   const user = await getSessionUser();
-  if (!user || !isHr(user.role)) return jsonError('HR sign-in required.', 403);
+  if (!user || !isHrManager(user.role)) return jsonError('HR manager sign-in required.', 403);
   const { id: employeeId } = await ctx.params;
   const slot = new URL(req.url).searchParams.get('slot') || '';
   if (!slot) return jsonError('Slot is required.');
@@ -108,11 +108,14 @@ export async function DELETE(req: Request, ctx: Ctx) {
     `SELECT file_path FROM shared_files WHERE employee_id = ? AND slot = ?`,
     [employeeId, slot]
   );
-  if (rows.length > 0 && typeof rows[0].file_path === 'string' && rows[0].file_path.startsWith('/uploads/')) {
-    try {
-      await unlink(path.join(process.cwd(), 'public', String(rows[0].file_path).replace(/^\/+/, '')));
-    } catch {
-      // File already gone from disk — the row still needs deleting.
+  if (rows.length > 0 && typeof rows[0].file_path === 'string') {
+    const abs = diskPathForUpload(String(rows[0].file_path));
+    if (abs) {
+      try {
+        await unlink(abs);
+      } catch {
+        // File already gone from disk — the row still needs deleting.
+      }
     }
   }
   await query(`DELETE FROM shared_files WHERE employee_id = ? AND slot = ?`, [employeeId, slot]);

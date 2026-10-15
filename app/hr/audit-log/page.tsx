@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { History } from 'lucide-react';
+import { apiUrl } from '@/lib/onboarding';
 import { useMe } from '@/lib/use-me';
 
 interface AuditRow {
@@ -50,7 +51,7 @@ export default function HRAuditLogPage() {
   const loadPage = async (p: number) => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/audit?page=${p}`, { cache: 'no-store' });
+      const res = await fetch(apiUrl(`/api/audit?page=${p}`), { cache: 'no-store' });
       if (!res.ok) throw new Error();
       const data = await res.json();
       setItems(data.items ?? []);

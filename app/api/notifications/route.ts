@@ -21,9 +21,11 @@ export async function GET() {
 interface ReadBody {
   id?: unknown;
   ids?: unknown;
+  /** Mark read by grouping key (e.g. `thread:<id>`) instead of row ids. */
+  taskKey?: unknown;
 }
 
-/** Mark one alert, a batch of alerts, or every alert as read. */
+/** Mark one alert, a batch of alerts, alerts under one key, or every alert as read. */
 export async function POST(req: Request) {
   const user = await getSessionUser();
   if (!user) return jsonError('Sign-in required.', 401);
@@ -44,6 +46,11 @@ export async function POST(req: Request) {
         [user.id, ...ids]
       );
     }
+  } else if (typeof body.taskKey === 'string' && body.taskKey) {
+    await query(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND task_id = ?`, [
+      user.id,
+      body.taskKey.slice(0, 64),
+    ]);
   } else if (typeof body.id === 'number' || typeof body.id === 'string') {
     await query(`UPDATE notifications SET is_read = 1 WHERE id = ? AND user_id = ?`, [body.id, user.id]);
   } else {

@@ -17,6 +17,11 @@ export function isHr(role: string | undefined): boolean {
   return role === 'hr_manager' || role === 'hr_assistant';
 }
 
+/** Destructive HR actions (invites, approvals, shares) require a manager. */
+export function isHrManager(role: string | undefined): boolean {
+  return role === 'hr_manager';
+}
+
 export async function createSession(userId: string): Promise<string> {
   const token = randomBytes(32).toString('hex');
   await query(`DELETE FROM sessions WHERE user_id = ?`, [userId]);
@@ -25,12 +30,13 @@ export async function createSession(userId: string): Promise<string> {
     [token, userId, SESSION_HOURS]
   );
   const store = await cookies();
+  // Plain-HTTP LAN deploys need Secure off or the browser drops the cookie.
+  // Set COOKIE_SECURE=true once the app serves HTTPS.
+  const secure = process.env.COOKIE_SECURE === 'true';
   store.set(SESSION_COOKIE, token, {
     httpOnly: true,
     sameSite: 'lax',
-    // Company LAN serves plain http, so Secure must stay off or the
-    // browser drops the session cookie and /dashboard bounces to /login.
-    secure: false,
+    secure,
     path: '/',
     maxAge: SESSION_HOURS * 3600,
   });

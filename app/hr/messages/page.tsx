@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Send } from 'lucide-react';
+import { apiUrl } from '@/lib/onboarding';
 import { useMe } from '@/lib/use-me';
 
 interface ThreadRow {
@@ -46,7 +47,7 @@ export default function HRMessagesPage() {
 
   const loadThreads = async () => {
     try {
-      const res = await fetch('/api/threads', { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/threads'), { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       setThreads(data.threads ?? []);
@@ -73,6 +74,23 @@ export default function HRMessagesPage() {
     [messages, active]
   );
 
+  // Viewing a thread clears its chat notif from the HR bell — only an
+  // explicitly opened thread clears, so unviewed threads keep their dot.
+  useEffect(() => {
+    if (!me || !activeId) return;
+    void (async () => {
+      try {
+        await fetch(apiUrl('/api/notifications'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskKey: `thread:${activeId}` }),
+        });
+      } catch {
+        // Bell count refreshes on the layout's next poll.
+      }
+    })();
+  }, [me, activeId]);
+
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [activeMessages, activeId]);
@@ -83,7 +101,7 @@ export default function HRMessagesPage() {
     if (!text || !active) return;
     setSending(true);
     try {
-      const res = await fetch(`/api/threads/${active.id}/messages`, {
+      const res = await fetch(apiUrl(`/api/threads/${active.id}/messages`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: text }),

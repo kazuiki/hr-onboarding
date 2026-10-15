@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Plus, ClipboardList, Check, X } from 'lucide-react';
+import { apiUrl } from '@/lib/onboarding';
 import { useMe } from '@/lib/use-me';
 
 interface TemplateTask {
@@ -37,7 +38,7 @@ export default function HRTemplatesPage() {
 
   const loadTemplates = async () => {
     try {
-      const res = await fetch('/api/templates', { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/templates'), { cache: 'no-store' });
       if (!res.ok) throw new Error();
       const data = await res.json();
       setTemplates(data.templates ?? []);
@@ -59,7 +60,7 @@ export default function HRTemplatesPage() {
     setSaving(true);
     setSaveError('');
     try {
-      const res = await fetch('/api/templates', {
+      const res = await fetch(apiUrl('/api/templates'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),

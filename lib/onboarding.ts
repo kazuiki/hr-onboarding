@@ -1,5 +1,16 @@
 // Shared onboarding constants (no server imports — safe for client + API).
 
+/** Subpath prefix when the app serves under one (NEXT_PUBLIC_BASE_PATH). Empty in local dev. */
+export const BASE_PATH = process.env.NEXT_PUBLIC_BASE_PATH ?? '';
+
+/**
+ * Prefix client-side URLs (fetch calls, file links) with the deploy subpath.
+ * next/link, router, and redirects apply basePath alone — do not wrap those.
+ */
+export function apiUrl(path: string): string {
+  return `${BASE_PATH}${path}`;
+}
+
 export type TaskCategory =
   | 'welcome'
   | 'form'
@@ -76,12 +87,68 @@ export const EMPLOYMENT_FORMS: { id: string; title: string; desc: string }[] = [
   { id: 'form-comprehension', title: 'Comprehension Test', desc: 'Employee handbook comprehension assessment' },
 ];
 
+/** First-day orientation checklist items with stable keys for database storage. */
+export interface FirstDayChecklistItem {
+  key: string;
+  label: string;
+}
+
+export const FIRST_DAY_CHECKLIST_ITEMS: FirstDayChecklistItem[] = [
+  { key: 'hr-orientation', label: 'HR Orientation' },
+  { key: 'admin-orientation', label: 'Administrative Orientation' },
+  { key: 'finance-orientation', label: 'Finance Orientation' },
+  { key: 'it-orientation', label: 'IT Orientation' },
+  { key: 'qms-orientation', label: 'QMS Orientation' },
+  { key: 'osh-orientation', label: 'OSH Orientation' },
+  { key: 'manual-reading', label: 'Reading of Employee Manual' },
+  { key: 'payroll-account', label: 'Opening Payroll Account' },
+  { key: 'office-tour', label: 'Office Tour' },
+  { key: 'superior-orientation', label: 'Orientation with Immediate Superior' },
+];
+
+/** Per-hire editable copy of the dashboard's "Accredited Medical Clinic"
+ *  card (3 rows: name + address line, phone line, hours line). HR edits
+ *  this for one specific employee; hires without a saved row see defaults. */
+export interface MedicalClinicContent {
+  clinicName: string;
+  clinicAddress: string;
+  clinicPhone: string;
+  clinicHours: string;
+}
+
+/** Shown to every new hire until HR saves employee-specific content. */
+export const DEFAULT_MEDICAL_CLINIC: MedicalClinicContent = {
+  clinicName: 'Clinica Manila',
+  clinicAddress:
+    'at SM Center Pasig, E. Rodriguez Jr. Ave corner Dona Julia Vargas Ave., Frontera Verde, Ortigas Center, Pasig, 1604 Metro Manila.',
+  clinicPhone: '(02) 8696 7055',
+  clinicHours: 'Monday to Saturday: 8:00 AM – 6:00 PM',
+};
+
+function medicalText(value: unknown, fallback: string): string {
+  return typeof value === 'string' && value.trim() ? value : fallback;
+}
+
+/** Normalize a employee_medical_content row; null when the hire has no saved row. */
+export function medicalClinicFromRow(
+  row: Record<string, unknown> | null | undefined
+): MedicalClinicContent | null {
+  if (!row) return null;
+  const d = DEFAULT_MEDICAL_CLINIC;
+  return {
+    clinicName: medicalText(row.clinic_name, d.clinicName),
+    clinicAddress: medicalText(row.clinic_address, d.clinicAddress),
+    clinicPhone: medicalText(row.clinic_phone, d.clinicPhone),
+    clinicHours: medicalText(row.clinic_hours, d.clinicHours),
+  };
+}
+
 /** Download URL for an uploaded file. Served via the authenticated /api/files route (never raw static). */
 export function fileUrl(storedPath: string | null | undefined): string {
   if (!storedPath) return '#';
   const clean = storedPath.startsWith('/') ? storedPath : `/${storedPath}`;
   if (!clean.startsWith('/uploads/')) return clean;
-  return `/api/files${clean}`;
+  return apiUrl(`/api/files${clean}`);
 }
 
 const MONTHS = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];

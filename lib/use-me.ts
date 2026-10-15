@@ -11,7 +11,7 @@ export interface Me {
   employee_number: string | null;
 }
 
-/** Client session hook. Redirects to /login when no valid session exists. */
+/** Client session hook. Redirects to /onboardingSys when no valid session exists. */
 export function useMe(options?: { allow?: Me['role'][] }): { me: Me | null; loading: boolean } {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
@@ -23,7 +23,7 @@ export function useMe(options?: { allow?: Me['role'][] }): { me: Me | null; load
       try {
         const res = await fetch('/api/auth/me', { cache: 'no-store' });
         if (!res.ok) {
-          router.replace('/login');
+          router.replace('/onboardingSys');
           return;
         }
         const data = (await res.json()) as Me;
@@ -33,7 +33,7 @@ export function useMe(options?: { allow?: Me['role'][] }): { me: Me | null; load
         }
         if (!cancelled) setMe(data);
       } catch {
-        router.replace('/login');
+        router.replace('/onboardingSys');
       } finally {
         if (!cancelled) setLoading(false);
       }

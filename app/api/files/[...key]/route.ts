@@ -1,6 +1,6 @@
 import { readFile } from 'fs/promises';
-import path from 'path';
 import { getSessionUser, isHr, jsonError } from '@/lib/auth';
+import { diskPathForUpload } from '@/lib/server-db';
 
 interface Ctx {
   params: Promise<{ key: string[] }>;
@@ -32,10 +32,8 @@ export async function GET(_req: Request, ctx: Ctx) {
   }
   if (!isHr(user.role) && employeeId !== user.id) return jsonError('Not allowed.', 403);
 
-  const abs = path.join(process.cwd(), 'public', 'uploads', employeeId, fileName);
-  // Stay inside the uploads root even with encoded segments.
-  const root = path.join(process.cwd(), 'public', 'uploads') + path.sep;
-  if (!abs.startsWith(root)) return jsonError('File not found.', 404);
+  const abs = diskPathForUpload(`/uploads/${employeeId}/${fileName}`);
+  if (!abs) return jsonError('File not found.', 404);
 
   let bytes: Buffer;
   try {

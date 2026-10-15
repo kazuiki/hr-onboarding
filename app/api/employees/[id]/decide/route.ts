@@ -1,5 +1,5 @@
-import { query, newId, auditEvent, notifyUser, recalcProgress, type Row } from '@/lib/server-db';
-import { getSessionUser, isHr, jsonError } from '@/lib/auth';
+import { query, newId, auditEvent, notifySingle, recalcProgress, type Row } from '@/lib/server-db';
+import { getSessionUser, isHrManager, jsonError } from '@/lib/auth';
 import { sectionForCategory, type TaskCategory } from '@/lib/onboarding';
 
 interface Ctx {
@@ -15,7 +15,7 @@ interface DecideBody {
 /** HR: approve a submission or send it back with feedback. */
 export async function POST(req: Request, ctx: Ctx) {
   const user = await getSessionUser();
-  if (!user || !isHr(user.role)) return jsonError('HR sign-in required.', 403);
+  if (!user || !isHrManager(user.role)) return jsonError('HR manager sign-in required.', 403);
   const { id: employeeId } = await ctx.params;
 
   let body: DecideBody;
@@ -51,13 +51,27 @@ export async function POST(req: Request, ctx: Ctx) {
   );
   const pct = await recalcProgress(employeeId);
 
-  await notifyUser({
+  if (decision === 'approved' && task[0].category === 'photo') {
+    const latest = await query<Row & { file_path: string }>(
+      `SELECT file_path FROM task_files
+       WHERE task_id = ? AND employee_id = ? ORDER BY created_at DESC LIMIT 1`,
+      [taskId, employeeId]
+    );
+    if (latest.length > 0 && typeof latest[0].file_path === 'string') {
+      await query(`UPDATE employees SET avatar_url = ? WHERE id = ?`, [
+        String(latest[0].file_path),
+        employeeId,
+      ]);
+    }
+  }
+
+  await notifySingle({
     userId: employeeId,
     type: decision === 'approved' ? 'approval' : 'rejection',
     title: decision === 'approved' ? `${task[0].title} approved.` : `${task[0].title} needs changes.`,
     body: decision === 'approved' ? 'HR approved your submission. Nice work.' : feedback,
     linkSection: sectionForCategory(task[0].category),
-    taskId,
+    dedupeKey: `task:${taskId}`,
   });
   await auditEvent({
     actorId: user.id,

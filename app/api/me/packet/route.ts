@@ -1,5 +1,6 @@
 import { query, type Row } from '@/lib/server-db';
 import { getSessionUser, jsonError } from '@/lib/auth';
+import { medicalClinicFromRow } from '@/lib/onboarding';
 
 /** Signed-in hire: everything the dashboard needs in one call. */
 export async function GET() {
@@ -29,11 +30,43 @@ export async function GET() {
      FROM task_files WHERE employee_id = ? ORDER BY created_at DESC`,
     [user.id]
   );
+  const formSubmissions = await query<Row>(
+    `SELECT id, form_type, form_data, status, submitted_at
+     FROM form_submissions WHERE employee_id = ? ORDER BY submitted_at DESC`,
+    [user.id]
+  );
+  const submissionHistory = await query<Row>(
+    `SELECT h.id, h.item_kind, h.item_key, h.item_label, h.category,
+            h.file_name, h.file_path, h.action, h.created_at,
+            (tf.id IS NOT NULL OR h.item_kind = 'form') AS file_present
+     FROM submission_history h
+     LEFT JOIN task_files tf
+       ON tf.employee_id = h.employee_id AND tf.file_path = h.file_path AND h.file_path IS NOT NULL
+     WHERE h.employee_id = ? ORDER BY h.created_at DESC`,
+    [user.id]
+  );
   const shared = await query<Row>(
     `SELECT slot, file_name, file_path, file_size, mime_type, notes, updated_at
      FROM shared_files WHERE employee_id = ?`,
     [user.id]
   );
+  const firstDayChecks = await query<Row>(
+    `SELECT item_key, is_checked FROM first_day_checklist WHERE employee_id = ?`,
+    [user.id]
+  );
+  // Per-hire clinic override; null until HR saves one (or the table is
+  // not imported yet) — the dashboard then shows the built-in defaults.
+  let medicalClinic = null;
+  try {
+    const rows = await query<Row>(
+      `SELECT clinic_name, clinic_address, clinic_phone, clinic_hours
+       FROM employee_medical_content WHERE employee_id = ?`,
+      [user.id]
+    );
+    medicalClinic = medicalClinicFromRow(rows[0] ?? null);
+  } catch {
+    medicalClinic = null;
+  }
   const notifications = await query<Row>(
     `SELECT id, type, title, body, link_section, task_id, is_read, created_at
      FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 20`,
@@ -62,7 +95,11 @@ export async function GET() {
     employee: profile[0],
     tasks,
     files,
+    formSubmissions,
+    submissionHistory,
     sharedFiles: shared,
+    firstDayChecks,
+    medicalClinic,
     notifications,
     unreadCount: Number(unread[0]?.n ?? 0),
     threads,

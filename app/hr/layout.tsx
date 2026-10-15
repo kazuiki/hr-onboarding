@@ -17,6 +17,7 @@ import {
   AlertCircle,
   CheckCircle2,
 } from 'lucide-react';
+import { apiUrl } from '@/lib/onboarding';
 
 interface HRNotification {
   id: number;
@@ -24,6 +25,7 @@ interface HRNotification {
   title: string;
   body: string | null;
   link_section: string | null;
+  task_id: string | null;
   is_read: number;
   created_at: string;
 }
@@ -48,7 +50,7 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    fetch('/api/auth/me', { cache: 'no-store' })
+    fetch(apiUrl('/api/auth/me'), { cache: 'no-store' })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (data && typeof data.full_name === 'string') setHrName(data.full_name);
@@ -61,7 +63,7 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
 
   const loadNotifs = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications', { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/notifications'), { cache: 'no-store' });
       if (!res.ok) return;
       const data = await res.json();
       setNotifications(data.items ?? []);
@@ -78,14 +80,15 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
     return () => clearInterval(timer);
   }, [loadNotifs]);
 
-  // Auto mark-read: viewing HR messages clears unread chat alerts, no bell click needed.
+  // Auto mark-read: viewing HR messages clears legacy key-less chat alerts.
+  // Keyed chat rows clear only when their thread is opened (messages page).
   useEffect(() => {
     if (!pathname.startsWith('/hr/messages')) return;
-    const ids = notifications.filter((n) => !n.is_read && n.type === 'chat').map((n) => n.id);
+    const ids = notifications.filter((n) => !n.is_read && n.type === 'chat' && !n.task_id).map((n) => n.id);
     if (ids.length === 0) return;
     (async () => {
       try {
-        await fetch('/api/notifications', {
+        await fetch(apiUrl('/api/notifications'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ids }),
@@ -100,7 +103,7 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
 
   const handleNotifClick = async (n: HRNotification) => {
     try {
-      await fetch('/api/notifications', {
+      await fetch(apiUrl('/api/notifications'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: n.id }),
@@ -118,20 +121,41 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
     }
   };
 
+  // Opening the bell means HR saw the feed: clear the dot at once.
+  const handleBellToggle = async () => {
+    if (notifOpen) {
+      setNotifOpen(false);
+      return;
+    }
+    setNotifOpen(true);
+    if (unreadCount === 0) return;
+    try {
+      await fetch(apiUrl('/api/notifications'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+    } catch {
+      return;
+    }
+    setNotifications((prev) => prev.map((x) => ({ ...x, is_read: 1 })));
+    setUnreadCount(0);
+  };
+
   const handleSignOut = async () => {
     setConfirmSignOut(false);
-    await fetch('/api/auth/logout', { method: 'POST' });
-    router.push('/login');
+    await fetch(apiUrl('/api/auth/logout'), { method: 'POST' });
+    router.push('/onboardingSys');
     router.refresh();
   };
 
   return (
     <div className="min-h-screen bg-[#f8fafc] flex">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex lg:flex-col lg:w-64 bg-[#011f4b] text-white shrink-0">
+      {/* Desktop Sidebar — fixed to the viewport; only the page scrolls. */}
+      <aside className="hidden lg:flex lg:flex-col lg:w-64 bg-[#011f4b] text-white shrink-0 lg:sticky lg:top-0 lg:h-screen">
         <div className="h-16 flex items-center gap-3 px-5 border-b border-[#03396c]">
           <Image
-            src="/PKII-LOGO1.png"
+            src={apiUrl('/PKII-LOGO1.png')}
             alt="PKII"
             width={32}
             height={32}
@@ -143,7 +167,7 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
 
-        <nav className="flex-1 py-4 px-3 space-y-1">
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
           {NAV_ITEMS.map((item) => {
             const isActive =
               item.href === '/hr'
@@ -207,7 +231,7 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
             <div className="h-16 flex items-center justify-between px-5 border-b border-[#03396c]">
               <div className="flex items-center gap-3">
                 <Image
-                  src="/PKII-LOGO1.png"
+                  src={apiUrl('/PKII-LOGO1.png')}
                   alt="PKII"
                   width={32}
                   height={32}
@@ -265,7 +289,7 @@ export default function HRLayout({ children }: { children: React.ReactNode }) {
             <div className="relative">
               <button
                 type="button"
-                onClick={() => setNotifOpen((v) => !v)}
+                onClick={() => void handleBellToggle()}
                 aria-expanded={notifOpen}
                 aria-label="Open notifications"
                 className="relative p-2 text-[#6497b1] hover:text-[#011f4b] hover:bg-[#eaf2f8] rounded-lg transition-colors"

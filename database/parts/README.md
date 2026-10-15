@@ -26,21 +26,31 @@ One schema, one file per table. Import in numeric order — every file runs
 | 20 | `20_audit_events.sql` | Append-only compliance log |
 | 21 | `21_sessions.sql` | Login sessions |
 | 22 | `22_views.sql` | `v_review_queue`, `v_employee_progress`, `v_audit_log` |
+| 23 | `23_first_day_checklist.sql` | First-day orientation checks (per hire) |
+| 24 | `24_password_hashes.sql` | Widen `users.password_hash` for scrypt |
+| 25 | `25_submission_history.sql` | Permanent per-hire submission log |
+| 26 | `26_two_factor.sql` | Authenticator-app 2FA (TOTP) per user ID |
+| 27 | `27_email_otp.sql` | Emailed sign-in codes (6 digits, 3-minute expiry) |
+| 28 | `28_qr_login.sql` | Scan-with-phone approval tokens (QR another way) |
+| 29 | `29_employee_medical_content.sql` | Per-hire Accredited Clinic details (HR-editable) |
+| 30 | `30_drop_dead_2fa_tables.sql` | Drop unused `user_two_factor_backup_codes` + `user_two_factor_devices` |
+| 31 | `31_prune_company_settings.sql` | Delete unread display-only `company_settings` keys |
 | 99 | `99_seed.sql` | Admin account + settings + template (no demo hires) |
 
-Medical, First Day and Data Privacy sections are static design content —
-they have no tables. Their checklist tasks (`task-med-1`, `task-firstday-1`,
-`task-privacy-1` in `onboarding_tasks`) still carry the database state.
+Medical, First Day and Data Privacy sections are otherwise static design
+content — they have no tables except the per-hire medical clinic override
+(`employee_medical_content`). Their checklist tasks (`task-med-1`,
+`task-firstday-1`, `task-privacy-1` in `onboarding_tasks`) still carry the
+database state.
 
 Requires MySQL 5.7+ / MariaDB 10.2+ (JSON columns), InnoDB.
 
 ## First login
 
 - Email: `hr.admin@philkoei.com.ph` — Password: `ChangeMe123!`
-- Change it immediately after first sign-in (or in phpMyAdmin):
-  `UPDATE users SET password_hash = SHA2('your-new-password', 256) WHERE email = 'hr.admin@philkoei.com.ph';`
-- Passwords are SHA2-256 digests for this school build. For production,
-  hash with bcrypt/argon2 in the app and store that string instead.
+- Change it immediately after first sign-in.
+- Passwords are scrypt hashes made by the app (`lib/password.ts`). Old
+  school-build SHA2 rows verify once, then upgrade to scrypt on login.
 
 ## App database user (least privilege)
 
@@ -60,10 +70,13 @@ The app never connects as root and never receives the root password.
 - The app connects with a limited MySQL user (see `.env`: `DB_USER`),
   never root from the app. Grant it only
   `SELECT, INSERT, UPDATE, DELETE` on `hr_onboarding.*`.
-- File bytes are never in the database — only paths under
-  `public/uploads/<employee_id>/`. The API validates extension, MIME type
-  and size before saving; the audit log never records file contents,
-  medical details or passwords.
+- File bytes are never in the database — only logical paths of the form
+  `/uploads/<employee_id>/<file>`. On disk those live under
+  `storage/uploads/` (outside `public/`, override with `UPLOAD_DIR`), so
+  every read passes the login-checked `/api/files` route. Moving an
+  existing deploy: copy `public/uploads/*` to `storage/uploads/`. The API
+  validates extension, MIME type and size before saving; the audit log
+  never records file contents, medical details or passwords.
 - `audit_events` is append-only by convention: the app user has no
   UPDATE/DELETE need on it outside of account removal cascades.
 - Keep `.env.local` (database credentials) out of git — it is already

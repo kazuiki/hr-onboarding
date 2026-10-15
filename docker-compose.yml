@@ -1,0 +1,29 @@
+# App only — database is the REAL MySQL on 192.168.0.219 (see server steps below).
+# Server must allow remote MySQL from this PC (bind-address + GRANT + firewall),
+# otherwise the app cannot connect.
+services:
+  app:
+    build: .
+    container_name: hr-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Real database (same values as .env, but reachable host for Docker).
+      DB_HOST: 192.168.0.219
+      DB_PORT: 3306
+      DB_USER: phpmyadmin
+      DB_PASSWORD: pkii@1111
+      DB_NAME: hr_onboarding
+      UPLOAD_DIR: /app/storage/uploads
+      SMTP_HOST: mail.philkoei.com.ph
+      SMTP_PORT: 587
+      SMTP_USER: noreplypkiicareers@philkoei.com.ph
+      SMTP_PASS: ~XhRM!IYjtGyPzj~
+      SMTP_FROM: ""
+      HR_NOTIFY_EMAIL: alra112602@gmail.com
+    volumes:
+      - uploads_data:/app/storage/uploads
+
+volumes:
+  uploads_data:

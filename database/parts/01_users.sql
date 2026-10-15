@@ -7,19 +7,17 @@
 --   hr_manager  -> /hr (full administration)
 --   hr_assistant-> /hr (review and messaging; no destructive actions)
 --
--- Passwords are SHA2-256 hex digests. The app never stores or logs plain
--- passwords. Login check used by the server:
---   SELECT id, role, full_name, is_active FROM users
---   WHERE email = ? AND password_hash = SHA2(?, 256);
--- For production, re-hash with bcrypt/argon2 in the application layer and
--- store the result here instead of SHA2.
+-- Passwords are scrypt hashes (`scrypt$<saltHex>$<hashHex>`) made by the app.
+-- The app never stores or logs plain passwords. Login verification runs in
+-- the application layer (lib/password.ts). Old school-build rows may still
+-- hold bare SHA2-256 hex; those verify once, then upgrade to scrypt on login.
 -- =====================================================================
 USE hr_onboarding;
 
 CREATE TABLE IF NOT EXISTS users (
   id            CHAR(36)     NOT NULL PRIMARY KEY COMMENT 'UUID',
   email         VARCHAR(255) NOT NULL UNIQUE COMMENT 'Login identity',
-  password_hash CHAR(64)     NOT NULL COMMENT 'SHA2(password, 256) hex; bcrypt in production',
+  password_hash VARCHAR(255) NOT NULL COMMENT 'scrypt hash from lib/password.ts',
   role          ENUM('hr_manager', 'hr_assistant', 'employee') NOT NULL DEFAULT 'employee',
   full_name     VARCHAR(255) NOT NULL,
   avatar_url    TEXT         NULL,

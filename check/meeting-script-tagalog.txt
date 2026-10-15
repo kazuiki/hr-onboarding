@@ -1,0 +1,77 @@
+MEETING SCRIPT - ROUTE PROJECT (simple lang, 5 minuto)
+Base sa PDF at gandalf insights
+
+---
+
+1. SIMULA
+"Magandang araw po. I-explain ko lang po yung review ng ROUTE project nila Narte, Matutis, at Romero.
+Binasa ko yung proposal nila. Sasabihin ko kung ano yung kaya gawin, ilang tao kailangan, at paano gagawin para umabot sa December."
+
+2. ANO YUNG ROUTE
+"Bale yung ROUTE, app siya para sa jeep, tricycle, at UV.
+Gusto niya ayusin yung 3 problema: walang mapa yung mga jeep at trike, nalilito yung turista sa pamasahe, at nakakalito lumipat ng sakay.
+May 5 features siya: AI search, fare calculator, palit pera, landmark guide, at OCR pang-scan ng karatula.
+Budget P21,500. Time 17 weeks, Sept to Dec."
+
+3. KAYA BA?
+"Okay naman yung idea. Pero honest lang, pang-prototype siya, hindi pang-buong Pilipinas agad.
+Parang 3 to 4 projects pinagsama sa isa eh.
+Kaya payo ko: 2 ruta lang muna. Halimbawa Binangonan to Angono lang. Jeep at trike lang.
+Tapos 2 users lang muna: yung araw-araw sumasakay at yung baguhan. Wag muna yung Tokyo at foreign tourist."
+
+4. ANO KAYA GAWIN NILANG TATLO
+" eto yung kaya nila:
+
+Kaya:
+- Mag-field work. Sumakay talaga, kausapin TODA, ilista sanayan, landmark, magkano pamasahe. Sila lang makakagawa nito.
+- Mag-encode ng data. Ilagay sa Excel tapos sa Firebase o Supabase. Yung tables na routes, stops, fares.
+- Gumawa ng simple app. Yung may search, mapa, at presyo. Kaya yan sa Flutter o website app gamit OSM na libre.
+- Gumawa ng fare formula. Basic math lang: base + per km, tapos less 20% pag student/senior/PWD.
+- Mag-test sa 30 tao at gumawa ng paper.
+
+Mahirap para sa kanila sa 17 weeks:
+- AI galing sa blogs, baka mag-imbento ng landmark.
+- Yung OCR na real-time sa gabi, mahirap basahin sulat-kamay pag gumagalaw.
+- Yung pang-buong bansa at Tokyo, wala tayong data, di rin ma-test."
+
+5. HATI-HATI
+"Para di magulo:
+- Isa sa data at backend: siya sa mapa data at fare logic.
+- Isa sa frontend: siya sa design ng app at mapa.
+- Isa sa test at docs: siya sa OCR demo, sa pag-test sa 30 users, at sa papel.
+- Si mentor: siya tutulong sa LGU at LTFRB, at mag-check."
+
+6. ILAN KAILANGAN
+"Kung 2 ruta lang: sapat na yung 3. Sakto sila.
+Kung gusto buuin lahat pati Tokyo at live AI: kailangan 5 to 6 katao. May pang-mobile, pang-backend, pang-AI, pang-camera, pang-test.
+So MVP muna tayo."
+
+7. PAANO GAGAWIN PARA MAKATIPID
+"Diskarte: manual muna bago AI. Fare muna bago OCR.
+
+Para di maubos pera:
+- Mapa: OSM muna na libre. Wag muna Mapbox.
+- Database: Firebase pwede, pero mas okay Supabase kasi libre sa umpisa.
+- OCR: ML Kit na libre sa phone lang. Wag muna yung may bayad.
+- Palit pera: table lang muna ng BSP, update weekly. Wag muna live API.
+- AI: sa huli na gumastos pag may app na.
+
+Plan:
+Weeks 1-5: ikutin yung 2 ruta, kunin presyo, lagay sa mapa.
+Weeks 6-10: gawin yung fare calculator at landmark guide. Wala munang AI.
+Weeks 11-14: saka lagay AI sa sarili nating data, OCR demo, at peso to dollar display.
+Weeks 15-17: ipa-test sa 30 tao, tapos sulat ng paper. Sukat: nakarating ba, tama ba pamasahe, nakatipid ba oras.
+Tapos gawing offline para gumana kahit walang signal."
+
+8. ENDING
+"So 3 lang: 2 ruta lang muna, manual muna, fare muna.
+Wag natin sabihin na bagong algorithm kasi may 10 kaparehong patent na. Sabihin natin na bagong combo para sa jeep at trike sa Pinas.
+Next step: gawin yung mapa ng 2 ruta, tapos fare calculator.
+May tanong po? Salamat!"
+
+---
+PAG MAY NAGTANONG:
+- Bakit wala Tokyo? "Wala tayong data, di natin ma-test taga-Binangonan tayo."
+- Bakit di AI agad? "Baka mag-imbento ng landmark eh. Sa atin munang data."
+- Bakit demo lang OCR? "Mahirap pag gabi at sulat-kamay."
+- Kasya ba budget? "Kasya pang-MVP, basta libre muna gamitin."

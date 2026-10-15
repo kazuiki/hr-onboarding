@@ -1,4 +1,4 @@
-import { query, newId, auditEvent, notifyUser, type Row } from '@/lib/server-db';
+import { query, newId, auditEvent, notifySingle, type Row } from '@/lib/server-db';
 import { getSessionUser, isHr, jsonError } from '@/lib/auth';
 
 /** Threads: hires see their own, HR sees every conversation. */
@@ -66,12 +66,13 @@ export async function POST(req: Request) {
     `SELECT id FROM users WHERE role IN ('hr_manager', 'hr_assistant') AND is_active = 1`
   );
   for (const hr of hrs) {
-    await notifyUser({
+    await notifySingle({
       userId: String(hr.id),
       type: 'chat',
       title: `New help request: ${subject}.`,
       body: text.slice(0, 200),
       linkSection: 'help',
+      dedupeKey: `thread:${threadId}`,
     });
   }
   await auditEvent({

@@ -16,6 +16,7 @@ erDiagram
     employees ||--o{ task_files : uploads
     employees ||--o{ form_submissions : submits
     employees ||--o{ shared_files : receives
+    employees ||--o{ first_day_checklist : checks
     employees ||--o{ message_threads : opens
     employees ||--o{ review_decisions : subject_of
     onboarding_templates ||--o{ template_tasks : contains
@@ -169,6 +170,13 @@ erDiagram
         text notes
         char uploaded_by FK
         timestamp created_at
+        timestamp updated_at
+    }
+    first_day_checklist {
+        char employee_id PK, FK
+        varchar item_key PK
+        tinyint is_checked
+        timestamp checked_at
         timestamp updated_at
     }
     message_threads {

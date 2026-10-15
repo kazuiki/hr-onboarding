@@ -1,5 +1,6 @@
 import { query, type Row } from '@/lib/server-db';
 import { getSessionUser, isHr, jsonError } from '@/lib/auth';
+import { medicalClinicFromRow } from '@/lib/onboarding';
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -56,6 +57,17 @@ export async function GET(_req: Request, ctx: Ctx) {
      WHERE r.employee_id = ? ORDER BY r.created_at DESC LIMIT 50`,
     [id]
   );
+  let medicalClinic = null;
+  try {
+    const clinicRows = await query<Row>(
+      `SELECT clinic_name, clinic_address, clinic_phone, clinic_hours
+       FROM employee_medical_content WHERE employee_id = ?`,
+      [id]
+    );
+    medicalClinic = medicalClinicFromRow(clinicRows[0] ?? null);
+  } catch {
+    medicalClinic = null;
+  }
 
-  return Response.json({ employee: profile[0], tasks, files, sharedFiles: shared, reviews });
+  return Response.json({ employee: profile[0], tasks, files, sharedFiles: shared, reviews, medicalClinic });
 }

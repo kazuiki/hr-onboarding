@@ -15,7 +15,7 @@ import {
   ChevronDown,
 } from 'lucide-react';
 import { useMe } from '@/lib/use-me';
-import { formatStartDate } from '@/lib/onboarding';
+import { apiUrl, formatStartDate } from '@/lib/onboarding';
 
 const DEPARTMENTS = [
   'Finance',
@@ -103,7 +103,7 @@ export default function HROverviewPage() {
 
   const loadEmployees = async () => {
     try {
-      const res = await fetch('/api/employees', { cache: 'no-store' });
+      const res = await fetch(apiUrl('/api/employees'), { cache: 'no-store' });
       if (!res.ok) throw new Error('Could not load employees.');
       const data = await res.json();
       setEmployees(data.employees ?? []);
@@ -173,7 +173,7 @@ export default function HROverviewPage() {
         ...form,
         department: form.department === 'Others' ? form.department_other.trim() || 'Others' : form.department,
       };
-      const res = await fetch('/api/employees', {
+      const res = await fetch(apiUrl('/api/employees'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),

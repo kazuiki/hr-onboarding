@@ -196,6 +196,83 @@ export async function notifyUser(input: {
   );
 }
 
+/**
+ * One collapsed "employee submitted" bell item for every active HR user.
+ * Newer submissions refresh the single unread row per hire instead of
+ * stacking one notif per upload.
+ */
+export async function notifyHrSubmission(
+  employeeId: string,
+  employeeName: string,
+  documentLabel: string,
+  detail: string
+): Promise<void> {
+  const hrs = await query<Row & { id: string }>(
+    `SELECT id FROM users WHERE role IN ('hr_manager', 'hr_assistant') AND is_active = 1`
+  );
+  for (const hr of hrs) {
+    await notifySingle({
+      userId: String(hr.id),
+      type: 'general',
+      title: `New submission from ${employeeName}.`,
+      body: `${documentLabel} — ${detail}.`,
+      dedupeKey: `submit:${employeeId}`,
+    });
+  }
+}
+
+/**
+ * One collapsed "employee removed a file" bell item for every active HR user.
+ * Reuses the same `submit:<employeeId>` key as submissions so the HR bell
+ * always shows the latest hire activity and viewing the hire clears it.
+ */
+export async function notifyHrRemoval(
+  employeeId: string,
+  employeeName: string,
+  documentLabel: string,
+  detail: string
+): Promise<void> {
+  const hrs = await query<Row & { id: string }>(
+    `SELECT id FROM users WHERE role IN ('hr_manager', 'hr_assistant') AND is_active = 1`
+  );
+  for (const hr of hrs) {
+    await notifySingle({
+      userId: String(hr.id),
+      type: 'general',
+      title: `${employeeName} removed a file.`,
+      body: `${documentLabel} — ${detail}.`,
+      dedupeKey: `submit:${employeeId}`,
+    });
+  }
+}
+ /**
+  * Collapse repeated pings into one unread bell item: older unread rows with
+  * the same (recipient, key) are marked read first, so chat threads,
+  * resubmits, and repeated decisions never flood the bell. History stays in
+  * read rows. The key rides in task_id (VARCHAR, no FK) — e.g. `thread:<id>`.
+  */
+export async function notifySingle(input: {
+  userId: string;
+  type: 'rejection' | 'approval' | 'reminder' | 'chat' | 'general';
+  title: string;
+  body?: string | null;
+  linkSection?: string | null;
+  dedupeKey: string;
+}): Promise<void> {
+  await query(`UPDATE notifications SET is_read = 1 WHERE user_id = ? AND task_id = ? AND is_read = 0`, [
+    input.userId,
+    input.dedupeKey,
+  ]);
+  await notifyUser({
+    userId: input.userId,
+    type: input.type,
+    title: input.title,
+    body: input.body,
+    linkSection: input.linkSection,
+    taskId: input.dedupeKey,
+  });
+}
+
 export interface SavedUpload {
   fileName: string;
   filePath: string;
@@ -208,10 +285,55 @@ function cleanFileName(name: string): string {
   return base.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180) || 'file';
 }
 
-/** Persist an uploaded web File under public/uploads/<employeeId>/. */
+// Magic-byte prefixes per accepted extension. Extension checks alone accept
+// renamed binaries; this verifies content matches the claimed type.
+const FILE_SIGNATURES: { ext: string; magic: number[][] }[] = [
+  { ext: 'jpg', magic: [[0xff, 0xd8, 0xff]] },
+  { ext: 'jpeg', magic: [[0xff, 0xd8, 0xff]] },
+  { ext: 'png', magic: [[0x89, 0x50, 0x4e, 0x47]] },
+  { ext: 'pdf', magic: [[0x25, 0x50, 0x44, 0x46]] },
+  { ext: 'doc', magic: [[0xd0, 0xcf, 0x11, 0xe0]] },
+  { ext: 'docx', magic: [[0x50, 0x4b, 0x03, 0x04]] },
+  { ext: 'ppt', magic: [[0xd0, 0xcf, 0x11, 0xe0]] },
+  { ext: 'pptx', magic: [[0x50, 0x4b, 0x03, 0x04]] },
+];
+
+/** True when the leading bytes match the claimed filename extension. */
+export function fileSignatureOk(fileName: string, bytes: Uint8Array | Buffer): boolean {
+  const ext = (fileName.split('.').pop() || '').toLowerCase();
+  const known = FILE_SIGNATURES.find((s) => s.ext === ext);
+  if (!known || bytes.length < 4) return false;
+  return known.magic.some((prefix) => prefix.every((b, i) => bytes[i] === b));
+}
+
+/**
+ * Disk root for uploads. Lives outside public/ (override with UPLOAD_DIR) so
+ * stored files never serve without a login; every read goes through the
+ * authenticated /api/files route. Database values keep the logical
+ * `/uploads/<employeeId>/<file>` shape so existing rows stay valid.
+ */
+export function uploadRoot(): string {
+  const override = process.env.UPLOAD_DIR;
+  return override ? path.resolve(override) : path.join(process.cwd(), 'storage', 'uploads');
+}
+
+/**
+ * Absolute disk path for a stored `/uploads/<employeeId>/<file>` value.
+ * Returns null for anything outside the uploads root.
+ */
+export function diskPathForUpload(filePath: string): string | null {
+  if (!filePath.startsWith('/uploads/')) return null;
+  const rel = filePath.replace(/^\/+/, '').replace(/^uploads[\/\\]/, '');
+  if (!rel || rel.includes('..')) return null;
+  const abs = path.join(uploadRoot(), rel);
+  if (!abs.startsWith(uploadRoot() + path.sep)) return null;
+  return abs;
+}
+
+/** Persist an uploaded web File under storage/uploads/<employeeId>/. */
 export async function saveUpload(file: File, employeeId: string): Promise<SavedUpload> {
   const safeEmployee = employeeId.replace(/[^a-zA-Z0-9-]/g, '_');
-  const dir = path.join(process.cwd(), 'public', 'uploads', safeEmployee);
+  const dir = path.join(uploadRoot(), safeEmployee);
   await mkdir(dir, { recursive: true });
   const stored = `${Date.now()}_${cleanFileName(file.name)}`;
   const bytes = Buffer.from(await file.arrayBuffer());

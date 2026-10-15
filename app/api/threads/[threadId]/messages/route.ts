@@ -1,4 +1,4 @@
-import { query, auditEvent, notifyUser, type Row } from '@/lib/server-db';
+import { query, auditEvent, notifySingle, type Row } from '@/lib/server-db';
 import { getSessionUser, isHr, jsonError } from '@/lib/auth';
 
 interface Ctx {
@@ -48,24 +48,26 @@ export async function POST(req: Request, ctx: Ctx) {
   );
 
   if (senderRole === 'hr') {
-    await notifyUser({
+    await notifySingle({
       userId: String(thread[0].employee_id),
       type: 'chat',
       title: `HR replied: ${String(thread[0].subject_title)}.`,
       body: text.slice(0, 200),
       linkSection: 'help',
+      dedupeKey: `thread:${threadId}`,
     });
   } else {
     const hrs = await query<Row & { id: string }>(
       `SELECT id FROM users WHERE role IN ('hr_manager', 'hr_assistant') AND is_active = 1`
     );
     for (const hr of hrs) {
-      await notifyUser({
+      await notifySingle({
         userId: String(hr.id),
         type: 'chat',
         title: `New message: ${String(thread[0].subject_title)}.`,
         body: text.slice(0, 200),
         linkSection: 'help',
+        dedupeKey: `thread:${threadId}`,
       });
     }
   }
